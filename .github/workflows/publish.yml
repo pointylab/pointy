@@ -1,0 +1,94 @@
+name: Publish
+
+# Publishes releases to npm as @pointylab/dsh, which DSH installs and offers
+# updates from. Package builds a v* tag here; Nagi-ovo/pointy-signed then
+# builds the same tag, signs and notarizes Pointy.app with a Developer ID,
+# and attaches the package to a release of its own. This workflow picks that
+# release up and publishes it once the checks below pass:
+#   - its build-provenance attestation was made by pointy-signed's release
+#     workflow on its main branch, on a GitHub-hosted runner;
+#   - its version has a v* tag here and is newer than npm's latest;
+#   - Pointy.app is signed by the expected Developer ID team and notarized.
+# npm publishes through trusted publishing (OIDC), configured on npmjs.com
+# for this workflow alone, so an unsigned build cannot reach npm.
+
+on:
+  schedule:
+    # Every 15 minutes, off the hour, when GitHub's scheduler is least busy.
+    - cron: '12,27,42,57 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+env:
+  SIGNED: Nagi-ovo/pointy-signed
+  TEAM_ID: PJM828YBFJ
+
+jobs:
+  # Cheap check on Linux; the macOS job runs only when there is a new release.
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.check.outputs.tag }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh release view --repo "$SIGNED" --json tagName --jq .tagName)
+          version=${tag#v}
+          latest=$(npm view @pointylab/dsh version)
+          if [ "$version" = "$latest" ] || [ "$(printf '%s\n%s\n' "$latest" "$version" | sort -V | tail -1)" != "$version" ]; then
+            echo "npm has $latest; the newest signed release is $tag"; exit 0
+          fi
+          if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+            echo "$SIGNED has $tag, which is not a tag here"; exit 1
+          fi
+          echo "publishing $tag (npm has $latest)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: check
+    if: needs.check.outputs.tag != ''
+    runs-on: macos-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download and check the signed package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.check.outputs.tag }}
+        run: |
+          gh release download "$TAG" --repo "$SIGNED" --pattern '*.tgz' --dir pkg
+          tgz=$(ls pkg/*.tgz)
+          gh attestation verify "$tgz" --repo "$SIGNED" \
+            --signer-workflow "$SIGNED/.github/workflows/release.yml" \
+            --source-ref refs/heads/main --deny-self-hosted-runners
+          mkdir unpacked
+          tar -xzf "$tgz" -C unpacked
+          name=$(node -p "require('./unpacked/package/package.json').name")
+          version=$(node -p "require('./unpacked/package/package.json').version")
+          if [ "$name" != "@pointylab/dsh" ] || [ "v$version" != "$TAG" ]; then
+            echo "the package is $name@$version, not @pointylab/dsh for $TAG"; exit 1
+          fi
+          app=unpacked/package/pet/Pointy.app
+          codesign --verify --deep --strict "$app"
+          codesign -dv "$app" 2>&1 | grep -qx "TeamIdentifier=$TEAM_ID"
+          spctl --assess --type execute -vv "$app" 2>&1 | tee spctl.txt
+          grep -q 'source=Notarized Developer ID' spctl.txt
+          xcrun stapler validate "$app"
+          echo "TGZ=$tgz" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Publish to npm
+        run: |
+          npm install -g npm@^11.5.1
+          npm publish "$TGZ" --access public

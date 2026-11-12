@@ -196,6 +196,8 @@ node tools/pack-plugin.ts
 
 签名和公证是可选的：设了 `APPLE_SIGNING_IDENTITY` 就用这个 Developer ID 签名，再设 `APPLE_NOTARY_PROFILE`（`xcrun notarytool store-credentials` 存的配置名）就公证并装订。`.github/workflows/package.yml` 在 macOS 上跑检查并打包，产物是同一个 tgz；仓库配了 `APPLE_CERTIFICATE` 等 secrets 时才签名和公证，没配就 ad hoc。插件没有 npm 依赖。
 
+发版：推一个 `v<版本>` tag，Package 打包、测试并发 GitHub release；[Nagi-ovo/pointy-signed](https://github.com/Nagi-ovo/pointy-signed) 随后用 Developer ID 给同一个 tag 的 Pointy.app 签名、公证，发到它自己的 release；`.github/workflows/publish.yml` 每 15 分钟检查一次，核对来源证明、版本和签名后把这个包发到 npm。npm 只信任 publish.yml，没签名的包发不上去。
+
 本地试装：`dsh plugin --profile <profile> add file:<tgz 的绝对路径>`。每次修改后先把 `plugin/package.json` 的版本号加一，同名同版本 pnpm 可能使用缓存；不要用 `link:`（`remove` 会连同源码目录一起删除）。
 
 **测试用的环境变量**
