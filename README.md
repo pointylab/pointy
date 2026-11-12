@@ -28,13 +28,13 @@
 
 </div>
 
-<p align="center">在 DSH 里打开「插件」→「添加插件」，填入下面这一行，点「安装」，装完重新打开 DSH。</p>
+<p align="center">在 DSH 里打开「插件」→「添加插件」，填入下面这一行，点「安装」，装完就能用。</p>
 
 ```
-github:pointylab/pointy#release
+@pointylab/dsh
 ```
 
-<p align="center"><sub>Pointy 目前处于内测阶段，功能和界面还会调整。首次启用会下载一次运行时，详见<a href="#安装说明">安装说明</a>。</sub></p>
+<p align="center"><sub>Pointy 目前处于内测阶段，功能和界面还会调整。详见<a href="#安装说明">安装说明</a>。</sub></p>
 
 <br>
 
@@ -103,15 +103,21 @@ github:pointylab/pointy#release
 
 **系统要求**：Windows 10 / 11（x64 和 Arm 都支持，要有 WebView2 运行时，Windows 11 自带），或 macOS 12 及以上（Apple 芯片和 Intel 都支持）。
 
-**安装**：DSH 里「插件」→「添加插件」，填 `github:pointylab/pointy#release`，点「安装」。装新版之前，先在「插件」里卸载旧版。也可以用命令行：
+**安装**：DSH 里「插件」→「添加插件」，填 `@pointylab/dsh`，点「安装」。也可以用命令行：
 
 ```bash
-dsh plugin --profile desktop add github:pointylab/pointy#release
+dsh plugin --profile desktop add @pointylab/dsh
 ```
 
 用 web 版 DSH 的，把 `desktop` 换成 `web`。
 
-**首次启用**：装完重启 DSH。Pointy 随插件安装，不用另外下载：Windows 上是插件里的 Pointy.exe，macOS 上是 Pointy.app。以前装过的版本下载的运行时（`~/.pointy/runtime`）会被删除，设置保留。准备好后，托盘里出现鲸鱼图标，屏幕中间播放一段开场，就可以开始用了。之后 Pointy 随 DSH 启动、随 DSH 退出。
+DSH 默认不安装发布不满一天的版本，所以新版刚发布时，装上的可能是上一个版本。装好后在插件页面点「更新」就能换成最新版。
+
+**首次启用**：装完不用重启 DSH。Pointy 随插件安装，不用另外下载：Windows 上是插件里的 Pointy.exe，macOS 上是 Pointy.app。准备好后，托盘里出现鲸鱼图标，屏幕中间播放一段开场，就可以开始用了。之后 Pointy 随 DSH 启动、随 DSH 退出。
+
+**更新**：有新版本时，DSH「插件」页面里 Pointy 旁边会出现「更新到 x.y.z」，点一下即可，同样不用重启。
+
+**以前用 `github:pointylab/pointy#release` 装的**：DSH 不会为这种安装提示更新。先在「插件」里卸载 Pointy，再按上面的方法装 `@pointylab/dsh`，以后就能在插件页面更新了。设置会保留，以前版本下载的运行时（`~/.pointy/runtime`）会被删除。
 
 <p align="center">
   <picture>
@@ -186,9 +192,11 @@ cd desktop && go run .
 node tools/pack-plugin.ts
 ```
 
-要在装了 Go 的 Mac 上运行。它把 `app`、`assets`、`extension` 复制进 `plugin/pet`，用 `go tool mygo build` 生成 Apple 芯片和 Intel 通用的 `plugin/pet/Pointy.app`（带页面资源，默认 ad hoc 签名），再交叉编译 Windows 的 `plugin/pet/win32-x64/Pointy.exe` 和 `plugin/pet/win32-arm64/Pointy.exe`（不用 cgo；图标和按显示器感知 DPI 的清单由 mygo 生成，打包时再在清单里写上 `asInvoker`），最后 `npm pack` 生成 `dist/pointylab-dsh-<版本>.tgz`。macOS 上插件通过 `open` 启动包里的 Pointy.app，这样系统把辅助功能和屏幕录制权限记在 Pointy 名下；Windows 上插件直接启动对应架构的 Pointy.exe，它读 `plugin/pet` 里的页面。以前装过的 `~/.pointy/runtime`（Electron）会被删除，设置保留。在 Windows 或 Linux 上可以用 `node tools/pack-plugin.ts --windows-only` 打一个只有 Windows 程序的包，用来测试。
+要在装了 Go 的 Mac 上运行。它把 `app`、`assets`、`extension` 复制进 `plugin/pet`，用 `go tool mygo build` 生成 Apple 芯片和 Intel 通用的 `plugin/pet/Pointy.app`（带页面资源，默认 ad hoc 签名），再交叉编译 Windows 的 `plugin/pet/win32-x64/Pointy.exe` 和 `plugin/pet/win32-arm64/Pointy.exe`（不用 cgo；图标和按显示器感知 DPI 的清单由 mygo 生成，打包时再在清单里写上 `asInvoker`），最后 `npm pack` 生成 `dist/pointylab-dsh-<版本>.tgz`。macOS 上插件通过 `open` 启动包里的 Pointy.app，这样系统把辅助功能和屏幕录制权限记在 Pointy 名下；Windows 上插件先把对应架构的 Pointy.exe 和页面复制到 `~/.pointy/app/<版本>/` 再启动（包目录里有运行中的文件会让 DSH 更新失败）。以前装过的 `~/.pointy/runtime`（Electron）会被删除，设置保留。在 Windows 或 Linux 上可以用 `node tools/pack-plugin.ts --windows-only` 打一个只有 Windows 程序的包，用来测试。
 
 签名和公证是可选的：设了 `APPLE_SIGNING_IDENTITY` 就用这个 Developer ID 签名，再设 `APPLE_NOTARY_PROFILE`（`xcrun notarytool store-credentials` 存的配置名）就公证并装订。`.github/workflows/package.yml` 在 macOS 上跑检查并打包，产物是同一个 tgz；仓库配了 `APPLE_CERTIFICATE` 等 secrets 时才签名和公证，没配就 ad hoc。插件没有 npm 依赖。
+
+发版：推一个 `v<版本>` tag，Package 打包、测试并发 GitHub release；[Nagi-ovo/pointy-signed](https://github.com/Nagi-ovo/pointy-signed) 随后用 Developer ID 给同一个 tag 的 Pointy.app 签名、公证，发到它自己的 release；`.github/workflows/publish.yml` 每 15 分钟检查一次，核对来源证明、版本和签名后把这个包发到 npm。npm 只信任 publish.yml，没签名的包发不上去。
 
 本地试装：`dsh plugin --profile <profile> add file:<tgz 的绝对路径>`。每次修改后先把 `plugin/package.json` 的版本号加一，同名同版本 pnpm 可能使用缓存；不要用 `link:`（`remove` 会连同源码目录一起删除）。
 

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm';
 import { activityOf } from './activity.js';
 import { composeAsk, composeFirst, isOurPreamble } from './compose.js';
-import { PET_APP_DIR, petLaunch } from './runtime.js';
+import { APP_DIR, cleanOldApps, MAX_REPLACE_ATTEMPTS, peerAction, petLaunch, PLUGIN_ROOT } from './runtime.js';
 export const name = 'pointy';
 export const inject = ['llm', 'agents'];
 const PORT = Number(process.env.POINTY_PORT) || 47321;
@@ -15,7 +15,8 @@ const TOKEN_FILE = path.join(PET_DIR, 'token');
 const PET_LOG = path.join(PET_DIR, 'pet.log');
 const PET_LOG_MAX = 256 * 1024;
 const RECONNECT_MS = 3000;
-/** An Electron Pointy that DSH started quits 10 s after its plugin goes away. */
+const REPLACE_RETRY_MS = 1000;
+/** A Pointy without explicit quit support exits 10 s after its plugin goes away. */
 const ELECTRON_QUIT_MS = 15_000;
 /** Events older than this are replays (session load), not live activity. */
 const STALE_EVENT_MS = 30_000;
@@ -30,7 +31,7 @@ const MAX_DROPPED_FILES = 20;
 const DESKTOP = process.argv.some((a) => /dsh-desktop-host[\\/]lib[\\/]index\.js$/.test(a));
 const PLUGIN_VERSION = (() => {
     try {
-        return JSON.parse(fs.readFileSync(path.join(PET_APP_DIR, '..', 'package.json'), 'utf8')).version;
+        return JSON.parse(fs.readFileSync(path.join(PLUGIN_ROOT, 'package.json'), 'utf8')).version;
     }
     catch {
         return '?';
@@ -100,24 +101,31 @@ function openPetLog() {
 function launchPet(logger) {
     let launch;
     try {
-        launch = petLaunch(logger, PET_LOG);
+        launch = petLaunch(logger, PET_LOG, PLUGIN_VERSION);
     }
     catch (error) {
         return logger.warn(`pointy: cannot start Pointy: ${error.message}`);
     }
     logger.info(`pointy: starting Pointy: ${launch.exe} ${launch.args.join(' ')}`);
     // DSH desktop runs plugins in Electron's node mode; apps Pointy opens must not inherit that.
-    const env = { ...process.env, POINTY_MANAGED: '1', POINTY_HOST_PID: String(process.pid) };
+    const env = {
+        ...process.env,
+        POINTY_MANAGED: '1',
+        POINTY_HOST_PID: String(process.pid),
+        POINTY_PLUGIN_ROOT: PLUGIN_ROOT,
+    };
     delete env.ELECTRON_RUN_AS_NODE;
     delete env.NODE_OPTIONS;
     try {
         const out = openPetLog();
-        const child = spawn(launch.exe, launch.args, { cwd: PET_APP_DIR, env, detached: true, stdio: ['ignore', out, out] });
+        const child = spawn(launch.exe, launch.args, { cwd: launch.cwd, env, detached: true, stdio: ['ignore', out, out] });
         fs.closeSync(out);
         child.on('error', (error) => logger.warn(`pointy: failed to start Pointy: ${error.message}`));
         child.on('exit', (code) => { if (code)
             logger.warn(`pointy: ${path.basename(launch.exe)} exited with ${code}, see ${PET_LOG}`); });
         child.unref();
+        if (process.platform === 'win32')
+            cleanOldApps(APP_DIR, PLUGIN_VERSION);
     }
     catch (error) {
         logger.warn(`pointy: failed to start Pointy: ${error.message}`);
@@ -132,6 +140,8 @@ class PetLink {
     timer;
     /** No reconnecting before this time. */
     waitUntil;
+    retryDelay;
+    replaceAttempts;
     onReady;
     onLost;
     onUnreachable;
@@ -143,6 +153,8 @@ class PetLink {
         this.stopped = false;
         this.timer = undefined;
         this.waitUntil = 0;
+        this.retryDelay = undefined;
+        this.replaceAttempts = 0;
         this.onReady = () => { };
         this.onLost = () => { };
         this.onUnreachable = () => { };
@@ -195,6 +207,25 @@ class PetLink {
                     ws.close();
                     return;
                 }
+                const action = peerAction(msg, PLUGIN_VERSION, this.replaceAttempts);
+                if (action === 'quit') {
+                    this.replaceAttempts++;
+                    this.logger.info(`pointy: Pointy ${msg.version} holds the port (plugin is ${PLUGIN_VERSION}); asking it to quit`);
+                    ws.send(JSON.stringify({ type: 'quit' }));
+                    this.retryDelay = REPLACE_RETRY_MS;
+                    ws.close();
+                    return;
+                }
+                if (action === 'wait') {
+                    this.replaceAttempts++;
+                    this.logger.info(`pointy: an older Pointy holds the port (plugin is ${PLUGIN_VERSION}); leaving it to quit`);
+                    this.waitUntil = Date.now() + ELECTRON_QUIT_MS;
+                    ws.close();
+                    return;
+                }
+                if (action === 'give-up') {
+                    this.logger.warn(`pointy: could not replace Pointy ${typeof msg.version === 'string' ? msg.version : 'unknown'} after ${MAX_REPLACE_ATTEMPTS} attempts; using it as is`);
+                }
                 this.authed = true;
                 this.onReady();
             }
@@ -219,7 +250,9 @@ class PetLink {
         if (this.stopped)
             return;
         clearTimeout(this.timer);
-        this.timer = setTimeout(() => this.connect(), Math.max(RECONNECT_MS, this.waitUntil - Date.now()));
+        const base = this.retryDelay ?? RECONNECT_MS;
+        this.retryDelay = undefined;
+        this.timer = setTimeout(() => this.connect(), Math.max(base, this.waitUntil - Date.now()));
     }
     send(msg) {
         if (!this.authed || this.ws?.readyState !== WebSocket.OPEN)
