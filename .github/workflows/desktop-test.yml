@@ -236,8 +236,11 @@ jobs:
           Check 'DSH starts Pointy.exe' ($null -ne $pointy) "$($pointy.ExecutablePath)"
           if ($pointy) {
             $path = $pointy.ExecutablePath
-            $ok = $path.StartsWith($env:DSH_HOME, 'OrdinalIgnoreCase') -and $path.EndsWith('\pet\${{ matrix.dir }}\Pointy.exe', 'OrdinalIgnoreCase')
-            Check "Pointy.exe runs from the plugin's pet\${{ matrix.dir }}" $ok $path
+            # A running Pointy.exe would lock the plugin package, so the plugin
+            # starts a copy in ~/.pointy/app/<version>/.
+            $version = (Get-Content -Raw (Join-Path $env:GITHUB_WORKSPACE 'plugin/package.json') | ConvertFrom-Json).version
+            $expected = Join-Path $pointyHome "app\$version\${{ matrix.dir }}\Pointy.exe"
+            Check "Pointy.exe runs from ~\.pointy\app\$version\${{ matrix.dir }}" ($path -ieq $expected) $path
           }
 
           $handshake = Join-Path $env:RUNNER_TEMP 'handshake.mjs'
