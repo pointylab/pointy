@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light dark">
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #ffffff;
+      --text: #1f2328;
+      --muted: #6e7781;
+      --line: #e6e8eb;
+      --chip: #f2f3f5;
+      --chip-hover: #e8eaed;
+      --blue: #4d6bfe;
+      --blue-hover: #3f5ce8;
+      --focus: #c9d4ff;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #23252a;
+        --text: #e6e8eb;
+        --muted: #a0a7b1;
+        --line: #34373d;
+        --chip: #2f3237;
+        --chip-hover: #3a3d43;
+        --blue: #6b84ff;
+        --blue-hover: #8096ff;
+        --focus: #3f4c86;
+      }
+    }
+    html, body { background: var(--bg); }
+    body { width: 240px; margin: 12px; font: 13px "Microsoft YaHei UI", sans-serif; color: var(--text); }
+    #status { font-weight: 600; }
+    input { box-sizing: border-box; width: 100%; padding: 6px; border: 1px solid var(--line); border-radius: 6px;
+      background: var(--bg); color: var(--text); font: inherit; font-size: 18px; letter-spacing: 4px; text-align: center; }
+    input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--focus); }
+    button { width: 100%; margin-top: 8px; padding: 6px; border: 0; border-radius: 8px; background: var(--chip); color: var(--text);
+      font: inherit; cursor: pointer; }
+    button:hover { background: var(--chip-hover); }
+    button:focus-visible, summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+    #pair { background: var(--blue); color: #fff; }
+    #pair:hover { background: var(--blue-hover); }
+    .muted { color: var(--muted); font-size: 12px; }
+    #msg { margin-top: 6px; min-height: 1em; color: var(--muted); }
+    details { margin-top: 8px; }
+    summary { cursor: pointer; }
+    #port { margin-top: 4px; font-size: 13px; letter-spacing: 0; text-align: left; }
+  </style>
+</head>
+<body>
+  <div id="status">检查中……</div>
+  <div id="pair-box" hidden>
+    <p class="muted">点下面的按钮，屏幕右下角 Pointy 会问要不要允许连接，点「允许」。</p>
+    <button id="pair" type="button">连接 Pointy</button>
+  </div>
+  <button id="unpair" type="button" hidden>取消配对</button>
+  <div id="msg"></div>
+  <details>
+    <summary class="muted">高级</summary>
+    <label class="muted">Pointy 端口（设了 POINTY_PORT 才需要改）
+      <input id="port" inputmode="numeric">
+    </label>
+  </details>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

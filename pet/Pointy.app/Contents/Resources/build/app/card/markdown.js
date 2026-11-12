@@ -1,0 +1,90 @@
+const HTML_ESCAPE = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
+const escapeHtml = (s) => s.replace(/[&<>"]/g, c => HTML_ESCAPE[c]);
+const LINK = /\[([^\]\n]+)\]\((?:&lt;([^\n]+?)&gt;|([^)\s]+))\)/g;
+const WINDOWS_PATH = /^[a-z]:[\\/]/i;
+const isLocalPath = (p) => WINDOWS_PATH.test(p) || /^\/(?!\/)/.test(p);
+function linkTarget(raw) {
+    const href = raw.replace(/&amp;/g, '&');
+    if (/^https?:\/\//i.test(href))
+        return href;
+    if (isLocalPath(href))
+        return href;
+    return undefined;
+}
+const IMG = /!\[([^\]\n]*)\]\((?:&lt;([^\n]+?)&gt;|([^)\s]+))\)/g;
+const IMAGE_FILE = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
+function localImage(raw) {
+    let path = raw.replace(/&amp;/g, '&');
+    if (/^file:\/\/\//i.test(path)) {
+        try {
+            path = decodeURI(path.slice(7));
+        }
+        catch {
+            return undefined;
+        }
+        if (/^\/[a-z]:/i.test(path))
+            path = path.slice(1);
+    }
+    if (!isLocalPath(path) || !IMAGE_FILE.test(path))
+        return undefined;
+    return WINDOWS_PATH.test(path) ? path.replace(/\//g, '\\') : path;
+}
+const fileUrl = (path) => `file://${WINDOWS_PATH.test(path) ? '/' : ''}${encodeURI(path.replace(/\\/g, '/')).replace(/#/g, '%23').replace(/\?/g, '%3F')}`;
+const attr = (v) => v.replace(/&(?!amp;|lt;|gt;|quot;)/g, '&amp;').replace(/"/g, '&quot;');
+function inline(text) {
+    return text
+        .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+        .replace(IMG, (m, alt, angled, plain) => {
+        const raw = angled ?? plain;
+        const path = localImage(raw);
+        if (path)
+            return `<img class="md-img" src="${attr(fileUrl(path))}" alt="${attr(alt)}" title="点开用系统看图" data-path="${attr(path)}">`;
+        const href = linkTarget(raw);
+        return href ? `<a href="#" data-href="${attr(href)}" title="${attr(href)}">${alt || '图片'}</a>` : m;
+    })
+        .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
+        .replace(LINK, (m, label, angled, plain) => {
+        const href = linkTarget(angled ?? plain);
+        return href ? `<a href="#" data-href="${href.replace(/"/g, '&quot;')}" title="${href.replace(/"/g, '&quot;')}">${label}</a>` : m;
+    });
+}
+const cells = (line) => line.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+const isTableSep = (line) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line);
+function blocks(text) {
+    const lines = text.split('\n');
+    const out = [];
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.trim().startsWith('|') && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+            const head = cells(line);
+            const rows = [];
+            i += 2;
+            while (i < lines.length && lines[i].trim().startsWith('|'))
+                rows.push(cells(lines[i++]));
+            i--;
+            out.push(`<table><tr>${head.map(h => `<th>${inline(h)}</th>`).join('')}</tr>${rows.map(r => `<tr>${r.map(c => `<td>${inline(c)}</td>`).join('')}</tr>`).join('')}</table>`);
+            continue;
+        }
+        if (/^&gt;\s?/.test(line)) {
+            const quoted = [];
+            while (i < lines.length && /^&gt;\s?/.test(lines[i]))
+                quoted.push(lines[i++].replace(/^&gt;\s?/, ''));
+            i--;
+            out.push(`<blockquote>${quoted.map(inline).join('\n')}</blockquote>`);
+            continue;
+        }
+        const heading = /^#{1,6}\s+(.+)$/.exec(line);
+        if (heading) {
+            out.push(`<b class="h">${inline(heading[1])}</b>`);
+            continue;
+        }
+        out.push(inline(line.replace(/^(\s*)[-*]\s+/, '$1• ')));
+    }
+    return out.join('\n').replace(/\n?(<table>|<blockquote>)/g, '$1').replace(/(<\/table>|<\/blockquote>)\n?/g, '$1');
+}
+export function renderMarkdown(md) {
+    return md.split(/```[^\n]*\n?/).map((part, i) => {
+        const html = escapeHtml(part);
+        return i % 2 === 1 ? `<pre><code>${html}</code></pre>` : blocks(html);
+    }).join('');
+}

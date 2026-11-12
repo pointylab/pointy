@@ -10,8 +10,8 @@
 
 <p>
   <img alt="内测中" src="https://img.shields.io/badge/%E7%8A%B6%E6%80%81-%E5%86%85%E6%B5%8B%E4%B8%AD-E8A33D?style=flat-square&labelColor=1C2033">
-  <img alt="Windows 10/11 x64" src="https://img.shields.io/badge/Windows-10%20%2F%2011%20x64-4D6BFE?style=flat-square&logo=windows&logoColor=white&labelColor=1C2033">
-  <img alt="macOS 开发中" src="https://img.shields.io/badge/macOS-%E5%BC%80%E5%8F%91%E4%B8%AD-8A90A6?style=flat-square&logo=apple&logoColor=white&labelColor=1C2033">
+  <img alt="Windows 10/11" src="https://img.shields.io/badge/Windows-10%20%2F%2011-4D6BFE?style=flat-square&logo=windows&logoColor=white&labelColor=1C2033">
+  <img alt="macOS 12+" src="https://img.shields.io/badge/macOS-12%2B-4D6BFE?style=flat-square&logo=apple&logoColor=white&labelColor=1C2033">
   <img alt="DeepSeek Harness 插件" src="https://img.shields.io/badge/DeepSeek%20Harness-%E6%8F%92%E4%BB%B6-4D6BFE?style=flat-square&labelColor=1C2033">
   <a href="LICENSE"><img alt="许可证 MIT" src="https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-4D6BFE?style=flat-square&labelColor=1C2033"></a>
   <a href="https://github.com/pointylab/pointy/stargazers"><img alt="GitHub Star 数" src="https://img.shields.io/github/stars/pointylab/pointy?style=flat-square&logo=github&label=Star&color=4D6BFE&labelColor=1C2033"></a>
@@ -101,7 +101,7 @@ github:pointylab/pointy#release
 
 ## 安装说明
 
-**系统要求**：Windows 10 / 11（x64）。macOS 版正在开发。
+**系统要求**：Windows 10 / 11（x64 和 Arm 都支持，要有 WebView2 运行时，Windows 11 自带），或 macOS 12 及以上（Apple 芯片和 Intel 都支持）。
 
 **安装**：DSH 里「插件」→「添加插件」，填 `github:pointylab/pointy#release`，点「安装」。装新版之前，先在「插件」里卸载旧版。也可以用命令行：
 
@@ -111,7 +111,7 @@ dsh plugin --profile desktop add github:pointylab/pointy#release
 
 用 web 版 DSH 的，把 `desktop` 换成 `web`。
 
-**首次启用**：装完重启 DSH。插件会下载一次 Pointy 用的运行时（约 150 MB）在 `%USERPROFILE%\.pointy\runtime`。下载完成后，托盘里出现鲸鱼图标，屏幕中间播放一段开场，就可以开始用了。之后 Pointy 随 DSH 启动、随 DSH 退出。
+**首次启用**：装完重启 DSH。Pointy 随插件安装，不用另外下载：Windows 上是插件里的 Pointy.exe，macOS 上是 Pointy.app。以前装过的版本下载的运行时（`~/.pointy/runtime`）会被删除，设置保留。准备好后，托盘里出现鲸鱼图标，屏幕中间播放一段开场，就可以开始用了。之后 Pointy 随 DSH 启动、随 DSH 退出。
 
 <p align="center">
   <picture>
@@ -119,6 +119,8 @@ dsh plugin --profile desktop add github:pointylab/pointy#release
     <img src="https://raw.githubusercontent.com/pointylab/pointy/main/media/intro-light.gif" width="420" alt="首次启用时的开场：晃一下鼠标，指哪问哪">
   </picture>
 </p>
+
+**macOS 权限**：第一次晃鼠标时，系统会请你允许 Pointy 使用「辅助功能」（读取指到的内容、拦下指认时的点击）；第一次截图时会请你允许「屏幕录制」。都在「系统设置 → 隐私与安全性」里打开，改完重新打开 DSH。macOS 上 Pointy 的图标在菜单栏，下文的「托盘」都指这里。
 
 **浏览器扩展**：托盘鲸鱼图标 →「安装浏览器扩展（推荐）…」，按弹出的卡片操作。扩展加载后会自动连接 Pointy，屏幕右下角会询问是否允许，点「允许」即可。
 
@@ -130,10 +132,10 @@ dsh plugin --profile desktop add github:pointylab/pointy#release
 
 - 晃动检测只读取光标位置，不安装鼠标钩子，也不记录轨迹。
 - 只有在你指认并确认之后，Pointy 才读取那一块内容；浏览器扩展同样只在被调用时读取页面。截图只保存在内存中，随第一个问题一起发出。
-- 指到的内容和你的问题只交给本机的 DSH，再由 DSH 发给你在 DSH 中配置的模型。除首次下载运行时外，Pointy 本身不联网。
+- 指到的内容和你的问题只交给本机的 DSH，再由 DSH 发给你在 DSH 中配置的模型。Pointy 本身不联网。
 - Pointy、DSH 插件和浏览器扩展之间只通过本机 `127.0.0.1` 通信，连接需要认证；浏览器扩展需要你在弹窗中点「允许」才能连接。
 - 在密码管理器、系统登录与授权弹窗，以及标题像登录、密码、网银、支付页面的窗口中，晃动不会触发指认。
-- 以管理员身份运行的程序无法读取，指认时会给出提示。
+- Windows 上以管理员身份运行的程序无法读取，指认时会给出提示。
 
 ## 卸载
 
@@ -143,7 +145,7 @@ dsh plugin --profile desktop add github:pointylab/pointy#release
 dsh plugin --profile desktop remove @pointylab/dsh
 ```
 
-卸载后关闭 DSH，Pointy 退出时会删除自己的运行时、设置和浏览器扩展配对信息（`%USERPROFILE%\.pointy`、`%APPDATA%\pointy`）。如果是在 DSH 未运行时用命令行卸载，Pointy 没有机会清理，请手动删除这两个文件夹。
+卸载后关闭 DSH，Pointy 退出时会删除自己的运行时、设置和浏览器扩展配对信息（Windows 是 `%USERPROFILE%\.pointy`、`%APPDATA%\pointy`，macOS 是 `~/.pointy`、`~/Library/Application Support/pointy`）。如果是在 DSH 未运行时用命令行卸载，Pointy 没有机会清理，请手动删除这两个文件夹。
 
 <details>
 <summary><b>开发</b></summary>
@@ -151,44 +153,48 @@ dsh plugin --profile desktop remove @pointylab/dsh
 <br>
 
 ```
-app\
-  main.js        只负责把下面几块接起来
-  pick\          晃一下鼠标、取选区、普通程序里的指认（UI Automation），对外只交出"抓到的东西"
-  browser\       浏览器扩展：配对、认证、网页里的指认、切标签页
-  agents\        卡片背后的 agent。index.js 写了每个 agent 要提供的接口，dsh\ 是 DSH 专属的部分
-  ui\            卡片和胶囊、提示窗和开场、托盘
-  server.js      127.0.0.1:47321 的 WebSocket 服务，DSH 插件和浏览器扩展都连这里
-  card\ pill\ notice\ intro\   各个窗口的页面
-plugin\          DSH 插件 @pointylab/dsh：把会话、回答推给 Pointy，必要时下载运行时并拉起 Pointy
-extension\       Chrome / Edge 扩展
-media\           README 用的截图和动图
+desktop/         Pointy 本体，Go 写的，跑在 mygo 上
+  main.go        只负责把下面几块接起来
+  internal/desktop/   和系统打交道的部分，darwin/ 和 windows/ 各一份，对外的样子相同
+  internal/pick/      晃一下鼠标、取选区、普通程序里的指认（Windows 用 UI Automation，macOS 用辅助功能接口），对外只交出"抓到的东西"
+  internal/browser/   浏览器扩展：配对、认证、网页里的指认、切标签页
+  internal/agent/     卡片背后的 agent（DSH），以及 Pointy 随 DSH 启动和退出
+  internal/ui/        卡片和胶囊、提示窗和开场、托盘
+  internal/server/    127.0.0.1:47321 的 WebSocket 服务，DSH 插件和浏览器扩展都连这里
+app/             各个窗口的页面（card、pill、notice、intro、pick/overlay），TypeScript 写的，通过 bridge/ 和 Go 通信
+locales/         页面和 Go 共用的文案
+plugin/          DSH 插件 @pointylab/dsh：把会话、回答推给 Pointy，必要时拉起 Pointy
+extension/       Chrome / Edge 扩展
+media/           README 用的截图和动图
 ```
 
-DSH 的插件宿主是 DSH 自己的程序以 node 模式运行的子进程，无法打开窗口，因此 Pointy 是单独的 Electron 进程，由插件携带并拉起。
+DSH 的插件宿主是 DSH 自己的程序以 node 模式运行的子进程，无法打开窗口，因此 Pointy 是单独的进程，由插件携带并拉起：`desktop/` 里的 Go 程序，Windows 上是 Pointy.exe，macOS 上是 Pointy.app。
 
 **运行开发版**
 
 ```bash
 npm install
-npm start
+npm run build
+cd desktop && go run .
 ```
 
-开发版和插件拉起的那份共用 `%USERPROFILE%\.pointy` 和单实例锁：开发版运行时，插件发现 47321 端口已有 Pointy，就直接连接，不再拉起自带的那份。
+开发版从仓库的 `build/` 读页面。它和插件拉起的那份共用 `~/.pointy` 和单实例锁：开发版运行时，插件发现 47321 端口已有 Pointy，就直接连接，不再拉起自带的那份。
 
 **打包插件**
 
 ```bash
-node tools/pack-plugin.mjs
+node tools/pack-plugin.ts
 ```
 
-把 `app`、`assets`、`extension` 复制进 `plugin\pet`，koffi（只保留 Windows x64 的预编译文件）和 ws 放进 `plugin\pet\vendor`，固定 Electron 版本和官方 SHA-256，`npm pack` 生成 `dist\pointylab-dsh-<版本>.tgz`。koffi 不作为 npm 依赖：pnpm 默认拦截依赖的安装脚本，koffi 带有安装脚本，被拦截后 `dsh plugin add` 会报错。插件唯一的依赖是 resedit（纯 JS），下载 Electron 后用它把 electron.exe 改名为 Pointy.exe，并替换描述和图标。
+要在装了 Go 的 Mac 上运行。它把 `app`、`assets`、`extension` 复制进 `plugin/pet`，用 `go tool mygo build` 生成 Apple 芯片和 Intel 通用的 `plugin/pet/Pointy.app`（带页面资源，默认 ad hoc 签名），再交叉编译 Windows 的 `plugin/pet/win32-x64/Pointy.exe` 和 `plugin/pet/win32-arm64/Pointy.exe`（不用 cgo；图标和按显示器感知 DPI 的清单由 mygo 生成，打包时再在清单里写上 `asInvoker`），最后 `npm pack` 生成 `dist/pointylab-dsh-<版本>.tgz`。macOS 上插件通过 `open` 启动包里的 Pointy.app，这样系统把辅助功能和屏幕录制权限记在 Pointy 名下；Windows 上插件直接启动对应架构的 Pointy.exe，它读 `plugin/pet` 里的页面。以前装过的 `~/.pointy/runtime`（Electron）会被删除，设置保留。在 Windows 或 Linux 上可以用 `node tools/pack-plugin.ts --windows-only` 打一个只有 Windows 程序的包，用来测试。
 
-本地试装：`dsh plugin --profile <profile> add file:<tgz 的绝对路径>`。每次修改后先把 `plugin\package.json` 的版本号加一，同名同版本 pnpm 可能使用缓存；不要用 `link:`（`remove` 会连同源码目录一起删除）。
+签名和公证是可选的：设了 `APPLE_SIGNING_IDENTITY` 就用这个 Developer ID 签名，再设 `APPLE_NOTARY_PROFILE`（`xcrun notarytool store-credentials` 存的配置名）就公证并装订。`.github/workflows/package.yml` 在 macOS 上跑检查并打包，产物是同一个 tgz；仓库配了 `APPLE_CERTIFICATE` 等 secrets 时才签名和公证，没配就 ad hoc。插件没有 npm 依赖。
+
+本地试装：`dsh plugin --profile <profile> add file:<tgz 的绝对路径>`。每次修改后先把 `plugin/package.json` 的版本号加一，同名同版本 pnpm 可能使用缓存；不要用 `link:`（`remove` 会连同源码目录一起删除）。
 
 **测试用的环境变量**
 
 - `POINTY_PORT`：修改端口，Pointy 和插件两边都识别。
-- `POINTY_TEST_HIDDEN=1`：不显示任何窗口、不创建托盘，配合 `--inspect` 和 `global.pointyTest` 测试。插件拉起 Pointy 时会把这两个变量传下去。
 - `npm run fake`：不启动 DSH，模拟插件推送一遍状态。
 
 </details>
@@ -200,7 +206,5 @@ node tools/pack-plugin.mjs
 本项目源代码依 [MIT 许可证](LICENSE) 发布。
 
 仓库中的鲸鱼娘形象素材（卡片旁的像素形象、指认光标、托盘与扩展图标，以及 `media/` 中包含这些形象的截图和动图）不适用 MIT 许可证，而依 [知识共享 署名-非商业性使用-相同方式共享 4.0 国际许可协议（CC BY-NC-SA 4.0）](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh-hans) 授权。原作者为上善无形，像素重绘为 ZipZipPipe。使用、修改或再发布这些素材前，请阅读 [ASSETS.md](ASSETS.md)。
-
-随插件分发的第三方组件 [koffi](https://koffi.dev) 和 [ws](https://github.com/websockets/ws)，以及插件下载的 [Electron](https://www.electronjs.org) 运行时，均依 MIT 许可证发布，并保留各自的版权声明。
 
 Pointy 是社区开发的第三方插件，与 DeepSeek 不存在隶属、合作或背书关系。「DeepSeek」及相关名称和标识归其权利人所有。

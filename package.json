@@ -1,6 +1,6 @@
 {
   "name": "@pointylab/dsh",
-  "version": "0.4.13",
+  "version": "0.5.0",
   "description": "Pointy for DeepSeek Harness: shake the mouse, point at anything on screen and ask DSH about it",
   "icon": "./icon.png",
   "license": "MIT",
@@ -9,26 +9,22 @@
   "repository": { "type": "git", "url": "git+https://github.com/pointylab/pointy.git", "directory": "plugin" },
   "bugs": "https://github.com/pointylab/pointy/issues",
   "type": "module",
-  "main": "src/node.js",
+  "main": "build/src/node.js",
   "exports": {
-    ".": "./src/node.js",
-    "./client": "./lib/client.js",
+    ".": "./build/src/node.js",
+    "./client": "./build/lib/client.js",
     "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json"
   },
   "files": [
-    "src",
-    "lib",
+    "build",
     "pet",
     "cordis.patch.yml",
     "ASSETS.md",
     "icon.png",
     "locale"
   ],
-  "os": ["win32"],
-  "dependencies": {
-    "resedit": "^3.1.0"
-  },
+  "os": ["win32", "darwin"],
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
