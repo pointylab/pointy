@@ -1,6 +1,10 @@
 name: Desktop test
 
 on:
+  # Runs on main as well, so the DSH install is cached there: a pull request
+  # can only restore caches from its own branch and from main.
+  push:
+    branches: [main]
   pull_request:
     paths:
       - desktop/**
@@ -221,6 +225,7 @@ jobs:
           $settings = Join-Path $pointyHome 'settings.json'
           Set-Content -LiteralPath $settings -Value '{"dnd":false,"shake":true,"shakeLevel":"high","welcomed":true,"locale":"en","fromElectron":"kept"}'
 
+          $version = (Get-Content -Raw plugin/package.json | ConvertFrom-Json).version
           $tgz = (Resolve-Path dist\*.tgz).Path
           & $dsh plugin --profile web add "file:$tgz" *> (Join-Path $out 'dsh-plugin-add.txt')
           Check 'dsh plugin add' ($LASTEXITCODE -eq 0) "exit $LASTEXITCODE"
@@ -238,7 +243,6 @@ jobs:
             $path = $pointy.ExecutablePath
             # A running Pointy.exe would lock the plugin package, so the plugin
             # starts a copy in ~/.pointy/app/<version>/.
-            $version = (Get-Content -Raw (Join-Path $env:GITHUB_WORKSPACE 'plugin/package.json') | ConvertFrom-Json).version
             $expected = Join-Path $pointyHome "app\$version\${{ matrix.dir }}\Pointy.exe"
             Check "Pointy.exe runs from ~\.pointy\app\$version\${{ matrix.dir }}" ($path -ieq $expected) $path
           }
@@ -259,7 +263,7 @@ jobs:
             if (msg.type === 'challenge') ws.send(JSON.stringify({ type: 'hello', v: 1, nonce, proof: hmac(`plugin|${msg.nonce}`) }))
             if (msg.type === 'hello-ok') {
               clearTimeout(timer)
-              console.log(JSON.stringify({ runtime: msg.runtime, proof: msg.proof === hmac(`pet|${nonce}`) }))
+              console.log(JSON.stringify({ runtime: msg.runtime, proof: msg.proof === hmac(`pet|${nonce}`), version: msg.version, managed: msg.managed }))
               ws.close()
             }
           })
@@ -271,7 +275,8 @@ jobs:
             if ($LASTEXITCODE -eq 0) { break }
             Start-Sleep -Seconds 1
           }
-          Check 'the handshake reports runtime go' ($reply -eq '{"runtime":"go","proof":true}') "$reply"
+          $want = '{"runtime":"go","proof":true,"version":"' + $version + '","managed":true}'
+          Check 'the handshake reports the Go runtime and the plugin version' ($reply -eq $want) "$reply"
 
           Check 'the Electron runtime is gone' (-not (Test-Path -LiteralPath (Join-Path $pointyHome 'runtime'))) (Join-Path $pointyHome 'runtime')
           $kept = Get-Content -Raw -LiteralPath $settings | ConvertFrom-Json
@@ -305,4 +310,157 @@ jobs:
         if: always()
         with:
           name: plugin-check-${{ matrix.dir }}
+          path: out/
+
+  # The same check on macOS: DSH starts Pointy.app from the plugin package
+  # (macOS lets a running app's files be replaced, so there is no copy), and
+  # Pointy reports the plugin's version. Accessibility and Input Monitoring
+  # can't be granted on a hosted runner, so pointing isn't tested here.
+  plugin-macos:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: desktop/go.mod
+          cache-dependency-path: desktop/go.sum
+      - run: npm ci
+      - name: Pack the plugin
+        run: node tools/pack-plugin.ts
+      - name: Resolve the latest DSH
+        run: |
+          version=$(npm view '@deepseek-ai/dsh@latest' version)
+          if [ -z "$version" ]; then echo 'could not read the latest DSH version from npm'; exit 1; fi
+          echo "DSH_VERSION=$version" >> "$GITHUB_ENV"
+          echo "Testing against DSH $version" >> "$GITHUB_STEP_SUMMARY"
+      - name: Restore DSH
+        id: dsh-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/dsh/node_modules
+            ${{ runner.temp }}/dsh/package.json
+            ${{ runner.temp }}/dsh/package-lock.json
+          key: dsh-${{ env.DSH_VERSION }}-${{ runner.os }}-${{ runner.arch }}-node24
+      - name: Install DSH
+        if: steps.dsh-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/dsh" && cd "$RUNNER_TEMP/dsh"
+          npm init -y > /dev/null
+          npm i "@deepseek-ai/dsh@$DSH_VERSION" --no-fund --no-audit
+      - name: Install the package into DSH and start it
+        run: |
+          # Every check runs and reports; the last line fails the step.
+          set +eo pipefail
+          mkdir -p out
+          results=out/plugin-check.txt
+          check() { # name, ok (1 or 0), detail
+            if [ "$2" = 1 ]; then line="PASS $1: $3"; else line="FAIL $1: $3"; fi
+            echo "$line" | tee -a "$results"
+          }
+          yes_if() { if "$@"; then echo 1; else echo 0; fi; }
+
+          scratch="$RUNNER_TEMP/dsh"
+          # DSH installs plugins with pnpm.
+          npm i -g pnpm@10 --no-fund --no-audit
+          export DSH_HOME="$scratch/home"
+          dsh="$scratch/node_modules/.bin/dsh"
+          version=$(node -p "require('./plugin/package.json').version")
+
+          # What an Electron install leaves behind: its runtime, and settings to keep.
+          pointy_home="$HOME/.pointy"
+          mkdir -p "$pointy_home/runtime/electron-v44.0.0-darwin-arm64"
+          echo stand-in > "$pointy_home/runtime/electron-v44.0.0-darwin-arm64/Electron"
+          settings="$pointy_home/settings.json"
+          echo '{"dnd":false,"shake":true,"shakeLevel":"high","welcomed":true,"locale":"en","fromElectron":"kept"}' > "$settings"
+
+          tgz=$(ls "$PWD"/dist/*.tgz)
+          "$dsh" plugin --profile web add "file:$tgz" > out/dsh-plugin-add.txt 2>&1
+          code=$?
+          check 'dsh plugin add' $(yes_if [ $code = 0 ]) "exit $code"
+
+          "$dsh" web --port 3093 --no-open > out/dsh-web.out.txt 2> out/dsh-web.err.txt &
+
+          app_bin='Pointy.app/Contents/MacOS/Pointy'
+          pid=''
+          for i in $(seq 90); do
+            pid=$(pgrep -f "$app_bin" | head -1)
+            [ -n "$pid" ] && break
+            sleep 1
+          done
+          path=''
+          [ -n "$pid" ] && path=$(ps -o command= -p "$pid")
+          check 'DSH starts Pointy.app' $(yes_if [ -n "$pid" ]) "$path"
+          case "$path" in
+            "$DSH_HOME"/*/node_modules/@pointylab/dsh/pet/$app_bin*) ok=1 ;;
+            *) ok=0 ;;
+          esac
+          check "Pointy.app runs from the plugin's pet" $ok "$path"
+          check 'there is no copy in ~/.pointy/app on macOS' $(yes_if [ ! -e "$pointy_home/app" ]) "$pointy_home/app"
+
+          handshake="$RUNNER_TEMP/handshake.mjs"
+          cat > "$handshake" <<'EOF'
+          import crypto from 'node:crypto'
+          import fs from 'node:fs'
+          import os from 'node:os'
+          import path from 'node:path'
+          const token = fs.readFileSync(path.join(os.homedir(), '.pointy', 'token'), 'utf8').trim()
+          const hmac = (data) => crypto.createHmac('sha256', token).update(data).digest('hex')
+          const nonce = crypto.randomBytes(16).toString('hex')
+          const ws = new WebSocket('ws://127.0.0.1:47321')
+          const timer = setTimeout(() => { console.log('timeout'); process.exit(1) }, 15000)
+          ws.addEventListener('message', (ev) => {
+            const msg = JSON.parse(String(ev.data))
+            if (msg.type === 'challenge') ws.send(JSON.stringify({ type: 'hello', v: 1, nonce, proof: hmac(`plugin|${msg.nonce}`) }))
+            if (msg.type === 'hello-ok') {
+              clearTimeout(timer)
+              console.log(JSON.stringify({ runtime: msg.runtime, proof: msg.proof === hmac(`pet|${nonce}`), version: msg.version, managed: msg.managed }))
+              ws.close()
+            }
+          })
+          ws.addEventListener('error', () => { console.log('error'); process.exit(1) })
+          EOF
+          reply=''
+          for i in $(seq 30); do
+            reply=$(node "$handshake" 2>&1) && break
+            sleep 1
+          done
+          want="{\"runtime\":\"go\",\"proof\":true,\"version\":\"$version\",\"managed\":true}"
+          check 'the handshake reports the Go runtime and the plugin version' $(yes_if [ "$reply" = "$want" ]) "$reply"
+
+          check 'the Electron runtime is gone' $(yes_if [ ! -e "$pointy_home/runtime" ]) "$pointy_home/runtime"
+          kept=$(node -e "const s=require(process.argv[1]); console.log(s.shakeLevel==='high'&&s.locale==='en'&&s.fromElectron==='kept'?1:0)" "$settings")
+          check "the Electron install's settings are kept" "$kept" "$(cat "$settings")"
+
+          # The plugin keeps its connection only once Pointy proves itself the Go runtime.
+          dsh_pids=$(pgrep -f "$scratch" | while read -r p; do ps -o command= -p "$p" | grep -q "$app_bin" || echo "$p"; done)
+          link=''
+          for i in $(seq 30); do
+            for p in $dsh_pids; do
+              link=$(lsof -a -nP -p "$p" -iTCP:47321 -sTCP:ESTABLISHED 2>/dev/null | tail -n +2 | head -1)
+              [ -n "$link" ] && break
+            done
+            [ -n "$link" ] && break
+            sleep 1
+          done
+          check "DSH's plugin stays connected to Pointy" $(yes_if [ -n "$link" ]) "$link"
+
+          for p in $dsh_pids; do kill -9 "$p" 2>/dev/null; done
+          gone=0
+          for i in $(seq 60); do
+            sleep 1
+            if ! pgrep -f "$app_bin" > /dev/null; then gone=1; break; fi
+          done
+          check 'Pointy quits when DSH quits' $gone 'within 60 s'
+
+          for f in pet.log error.log; do [ -f "$pointy_home/$f" ] && cp "$pointy_home/$f" out/; done
+          ! grep -q '^FAIL' "$results"
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: plugin-check-macos
           path: out/
