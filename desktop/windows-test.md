@@ -47,7 +47,7 @@ Get-Content out\selfcheck.txt
 
 ### 装上插件
 
-插件包自带 Go 版的 Pointy.exe。从 CI 产物 `pointylab-dsh-windows`（Desktop test 工作流）或 `pointylab-dsh`（macOS 工作流）里取 `pointylab-dsh-<版本>.tgz`：
+插件包自带 Go 版的 Pointy.exe。从 CI 产物 `pointylab-dsh-windows`（Desktop test 工作流）或 `pointylab-dsh`（Package 工作流）里取 `pointylab-dsh-<版本>.tgz`：
 
 1. 在 DSH「插件」里卸载旧版 Pointy，再退出 DSH。
 2. `dsh plugin --profile desktop add file:<tgz 的绝对路径>`，用 web 版就把 `desktop` 换成 `web`。

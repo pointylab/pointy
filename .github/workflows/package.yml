@@ -1,7 +1,9 @@
-name: macOS
+name: Package
 
-# Builds the plugin package with Pointy.app inside. Signing and notarization
-# run only when their secrets are set; without them the app is signed ad hoc.
+# Builds the one plugin package every platform installs: Pointy.app, built
+# and signed on macOS, and Pointy.exe for Windows x64 and arm64,
+# cross-compiled. Signing and notarization run only when their secrets are
+# set; without them the app is signed ad hoc.
 #   APPLE_CERTIFICATE           base64 of a Developer ID Application .p12
 #   APPLE_CERTIFICATE_PASSWORD  its password
 #   APPLE_SIGNING_IDENTITY      e.g. "Developer ID Application: Jane Doe (TEAMID)"
@@ -78,12 +80,18 @@ jobs:
           path: dist/*.tgz
           if-no-files-found: error
 
-  # A v* tag publishes the package: the release branch, which DSH installs
-  # from (github:pointylab/pointy#release), gets its contents, and a GitHub
-  # release gets the tgz.
+  # A release runs the Windows tests again on the tagged commit, since only
+  # pull requests run them otherwise.
+  windows-test:
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/desktop-test.yml
+
+  # A v* tag publishes the package once both pass: the release branch, which
+  # DSH installs from (github:pointylab/pointy#release), gets its contents,
+  # and a GitHub release gets the tgz.
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: package
+    needs: [package, windows-test]
     runs-on: ubuntu-latest
     permissions:
       contents: write
