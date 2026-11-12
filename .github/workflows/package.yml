@@ -82,9 +82,9 @@ jobs:
           path: dist/*.tgz
           if-no-files-found: error
 
-  # A release runs the Windows tests again on the tagged commit, since only
-  # pull requests run them otherwise.
-  windows-test:
+  # A release runs the desktop tests (Windows and the macOS DSH check) again
+  # on the tagged commit, since only pull requests run them otherwise.
+  desktop-test:
     if: startsWith(github.ref, 'refs/tags/v')
     uses: ./.github/workflows/desktop-test.yml
 
@@ -94,7 +94,7 @@ jobs:
   # tag later, from publish.yml.
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [package, windows-test]
+    needs: [package, desktop-test]
     runs-on: ubuntu-latest
     permissions:
       contents: write
