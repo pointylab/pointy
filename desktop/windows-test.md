@@ -51,7 +51,7 @@ Get-Content out\selfcheck.txt
 
 1. 在 DSH「插件」里卸载旧版 Pointy，再退出 DSH。
 2. `dsh plugin --profile desktop add file:<tgz 的绝对路径>`，用 web 版就把 `desktop` 换成 `web`。
-3. 打开 DSH。插件会启动 `pet\win32-x64\Pointy.exe`（DSH 是 arm64 版时是 `win32-arm64`），托盘里出现 Pointy 的图标，托盘菜单里显示已连接。如果旧的 Electron 版还在跑，插件会等它在 10 秒内退出，再换上 Go 版。`~\.pointy\runtime` 里下载过的 Electron 会被删掉。
+3. 打开 DSH。插件会把页面和 `win32-x64\Pointy.exe`（DSH 是 arm64 版时是 `win32-arm64`）复制到 `~/.pointy/app/<版本>/` 再启动（包目录里有运行中的文件会让 DSH 更新失败），托盘里出现 Pointy 的图标，托盘菜单里显示已连接。如果旧的 Electron 版还在跑，插件会等它在 10 秒内退出，再换上 Go 版。`~\.pointy\runtime` 里下载过的 Electron 会被删掉。
 
 用的还是原来的 `~\.pointy`，设置、扩展配对都沿用。想让它把每次指认的诊断写进日志，可以在 `~\.pointy\settings.json` 里加上 `"debugPick": true`，日志在 `~\.pointy\error.log`。Pointy 自己的输出在 `~\.pointy\pet.log`。
 

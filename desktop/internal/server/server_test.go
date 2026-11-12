@@ -61,14 +61,14 @@ func dial(t *testing.T, url string) *client {
 	return &client{t, ws}
 }
 
-func (c *client) read() (map[string]string, error) {
+func (c *client) read() (map[string]any, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	_, b, err := c.ws.Read(ctx)
 	if err != nil {
 		return nil, err
 	}
-	m := map[string]string{}
+	m := map[string]any{}
 	json.Unmarshal(b, &m)
 	return m, nil
 }
@@ -80,12 +80,13 @@ func (c *client) send(v any) {
 	}
 }
 
-func (c *client) hello(proofKey string) map[string]string {
+func (c *client) hello(proofKey string) map[string]any {
 	ch, err := c.read()
 	if err != nil || ch["type"] != "challenge" {
 		c.t.Fatalf("challenge %v %v", ch, err)
 	}
-	c.send(map[string]any{"type": "hello", "v": 1, "nonce": "client-nonce", "proof": Sign(proofKey, "plugin|"+ch["nonce"])})
+	nonce, _ := ch["nonce"].(string)
+	c.send(map[string]any{"type": "hello", "v": 1, "nonce": "client-nonce", "proof": Sign(proofKey, "plugin|"+nonce)})
 	reply, _ := c.read()
 	return reply
 }
@@ -95,10 +96,11 @@ func closedByServer(err error) bool {
 }
 
 func TestPluginProof(t *testing.T) {
-	url, plugins := start(t, Routes{})
+	url, plugins := start(t, Routes{Version: "0.5.2", Managed: true})
 	c := dial(t, url)
 	reply := c.hello(token)
-	if reply["type"] != "hello-ok" || !Verify(token, "pet|client-nonce", reply["proof"]) || reply["runtime"] != "go" {
+	proof, _ := reply["proof"].(string)
+	if reply["type"] != "hello-ok" || !Verify(token, "pet|client-nonce", proof) || reply["runtime"] != "go" || reply["version"] != "0.5.2" || reply["managed"] != true {
 		t.Fatalf("reply %v", reply)
 	}
 	h := <-plugins
@@ -114,7 +116,8 @@ func TestBadProofCloses(t *testing.T) {
 	url, plugins := start(t, Routes{})
 	c := dial(t, url)
 	ch, _ := c.read()
-	c.send(map[string]any{"type": "hello", "nonce": "n", "proof": Sign("wrong", "plugin|"+ch["nonce"])})
+	nonce, _ := ch["nonce"].(string)
+	c.send(map[string]any{"type": "hello", "nonce": "n", "proof": Sign("wrong", "plugin|"+nonce)})
 	if _, err := c.read(); !closedByServer(err) {
 		t.Fatalf("read after bad proof: %v", err)
 	}
@@ -158,7 +161,8 @@ func TestExtensionRoute(t *testing.T) {
 	}})
 	c := dial(t, url)
 	ch, _ := c.read()
-	c.send(map[string]any{"type": "hello", "role": "extension", "id": "e1", "nonce": "n", "proof": Sign("ext-token", "ext|"+ch["nonce"])})
+	nonce, _ := ch["nonce"].(string)
+	c.send(map[string]any{"type": "hello", "role": "extension", "id": "e1", "nonce": "n", "proof": Sign("ext-token", "ext|"+nonce)})
 	if m, _ := c.read(); m["type"] != "hello-ok" || got.ID != "e1" {
 		t.Fatalf("reply %v hello %+v", m, got)
 	}
@@ -168,9 +172,10 @@ func TestNotJSONIsIgnored(t *testing.T) {
 	url, _ := start(t, Routes{})
 	c := dial(t, url)
 	ch, _ := c.read()
+	nonce, _ := ch["nonce"].(string)
 	c.ws.Write(context.Background(), websocket.MessageText, []byte("{oops"))
-	c.send(map[string]any{"type": "hello", "nonce": "n", "proof": Sign(token, "plugin|"+ch["nonce"])})
-	if m, _ := c.read(); m["type"] != "hello-ok" {
+	c.send(map[string]any{"type": "hello", "nonce": "n", "proof": Sign(token, "plugin|"+nonce)})
+	if m, _ := c.read(); m["type"] != "hello-ok" || m["version"] != "" || m["managed"] != false {
 		t.Fatalf("got %v", m)
 	}
 }
