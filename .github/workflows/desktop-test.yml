@@ -10,6 +10,7 @@ on:
       - assets/**
       - package.json
       - .github/workflows/desktop-test.yml
+  workflow_call:
   workflow_dispatch:
 
 permissions:

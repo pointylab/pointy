@@ -14,7 +14,7 @@ const appOut = path.join(root, 'dist', 'mygo')
 // Pointy.app is built and signed on macOS. --windows-only packs the Windows
 // executables alone, for testing the package on Windows.
 const windowsOnly = process.argv.includes('--windows-only')
-if (process.platform !== 'darwin' && !windowsOnly) throw new Error('Pointy.app is built and signed on macOS: pack on a Mac, take the package from the macOS workflow, or pass --windows-only')
+if (process.platform !== 'darwin' && !windowsOnly) throw new Error('Pointy.app is built and signed on macOS: pack on a Mac, take the package from the Package workflow, or pass --windows-only')
 
 execFileSync(process.execPath, [path.join(root, 'tools', 'build.ts')], { cwd: root, stdio: 'inherit' })
 
