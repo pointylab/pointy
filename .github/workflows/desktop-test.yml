@@ -1,6 +1,10 @@
 name: Desktop test
 
 on:
+  # Runs on main as well, so the DSH install is cached there: a pull request
+  # can only restore caches from its own branch and from main.
+  push:
+    branches: [main]
   pull_request:
     paths:
       - desktop/**
