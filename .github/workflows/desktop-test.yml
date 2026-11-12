@@ -51,9 +51,50 @@ jobs:
           $file = Join-Path $env:RUNNER_TEMP 'pointy-selfcheck.txt'
           Set-Content -LiteralPath $file -Value $text -Encoding utf8
           $notepad = Start-Process notepad.exe -ArgumentList "`"$file`"" -PassThru
-          Start-Sleep -Seconds 3
-          (New-Object -ComObject WScript.Shell).AppActivate($notepad.Id) | Out-Null
-          Start-Sleep -Seconds 1
+
+          # On Windows 11 the PID Start-Process returns may not own Notepad's
+          # window, and the window can come up minimized or only a title bar
+          # high. Find it by title, restore it to a normal size and check it is
+          # in front before Pointy starts.
+          Add-Type -Namespace Pointy -Name Win -MemberDefinition @'
+          [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindowW(string cls, string title);
+          [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+          [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
+          [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+          [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+          [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
+          [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int ht, bool repaint);
+          [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, [Out] int[] rect);
+          '@
+          $title = "$(Split-Path -Leaf $file) - Notepad"
+          $window = [IntPtr]::Zero
+          for ($i = 0; $i -lt 50 -and $window -eq [IntPtr]::Zero; $i++) {
+            Start-Sleep -Milliseconds 200
+            $window = [Pointy.Win]::FindWindowW([NullString]::Value, $title)
+          }
+          if ($window -eq [IntPtr]::Zero) {
+            Write-Host "::error::Notepad showed no window titled '$title' within 10 s"
+            exit 1
+          }
+          [uint32]$notepadPid = 0
+          [Pointy.Win]::GetWindowThreadProcessId($window, [ref]$notepadPid) | Out-Null
+          $shell = New-Object -ComObject WScript.Shell
+          $rect = [int[]]::new(4)
+          $ready = $false
+          for ($i = 0; $i -lt 20 -and -not $ready; $i++) {
+            [Pointy.Win]::ShowWindow($window, 9) | Out-Null # SW_RESTORE
+            [Pointy.Win]::MoveWindow($window, 78, 78, 794, 545, $true) | Out-Null
+            if (-not [Pointy.Win]::SetForegroundWindow($window)) { $shell.AppActivate([int]$notepadPid) | Out-Null }
+            Start-Sleep -Milliseconds 500
+            [Pointy.Win]::GetWindowRect($window, $rect) | Out-Null
+            $ready = [Pointy.Win]::GetForegroundWindow() -eq $window -and -not [Pointy.Win]::IsIconic($window) -and ($rect[3] - $rect[1]) -ge 400
+          }
+          $where = "Notepad ('$title', window $window, pid $notepadPid) at [$($rect -join ' ')]"
+          if (-not $ready) {
+            Write-Host "::error::$where is not a restored, full-size foreground window: foreground is $([Pointy.Win]::GetForegroundWindow()), minimized $([Pointy.Win]::IsIconic($window))"
+            exit 1
+          }
+          Write-Host "$where is restored and in front"
 
           $env:POINTY_SELFCHECK = $out
           $env:POINTY_SELFCHECK_TEXT = $text
@@ -75,7 +116,7 @@ jobs:
               Add-Content -LiteralPath $out "PASS cleanup after exit: $dir is gone"
             }
           }
-          Stop-Process -Id $notepad.Id -ErrorAction SilentlyContinue
+          Stop-Process -Id $notepadPid, $notepad.Id -ErrorAction SilentlyContinue
           foreach ($check in 'pick opens a card', "the pick's picture leaves the overlay out", 'a maximized window is not full screen') {
             if (-not (Select-String -LiteralPath $out -Pattern "^PASS $([regex]::Escape($check)):" -Quiet)) {
               Add-Content -LiteralPath $out "FAIL ${check}: did not pass"
