@@ -86,15 +86,18 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     uses: ./.github/workflows/desktop-test.yml
 
-  # A v* tag publishes the package once both pass: the release branch, which
-  # DSH installs from (github:pointylab/pointy#release), gets its contents,
-  # and a GitHub release gets the tgz.
+  # A v* tag publishes the package once both pass: npm gets it as
+  # @pointylab/dsh, which DSH installs and offers updates from; the release
+  # branch, which older installs (github:pointylab/pointy#release) use, gets
+  # its contents; and a GitHub release gets the tgz. npm publishes through
+  # trusted publishing (OIDC), configured on npmjs.com for this workflow.
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [package, windows-test]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     steps:
       - uses: actions/download-artifact@v5
         with:
@@ -131,6 +134,18 @@ jobs:
           fi
           git commit -m "Release ${{ steps.pkg.outputs.version }} (built plugin package)"
           git push origin release
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Publish to npm
+        run: |
+          npm install -g npm@^11.5.1
+          if npm view "@pointylab/dsh@${{ steps.pkg.outputs.version }}" version > /dev/null 2>&1; then
+            echo "npm already has @pointylab/dsh@${{ steps.pkg.outputs.version }}"
+            exit 0
+          fi
+          npm publish "${{ steps.pkg.outputs.tgz }}" --access public
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
