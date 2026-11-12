@@ -107,8 +107,6 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    env:
-      DSH_VERSION: 0.2.2-rc.1
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -128,6 +126,15 @@ jobs:
           name: pointylab-dsh-windows
           path: dist/*.tgz
           if-no-files-found: error
+      # Test against the DSH users get: whatever npm tags latest today, so a
+      # DSH release that breaks Pointy fails the next run.
+      - name: Resolve the latest DSH
+        run: |
+          $version = npm view '@deepseek-ai/dsh@latest' version
+          if ($LASTEXITCODE -ne 0 -or -not $version) { throw 'could not read the latest DSH version from npm' }
+          "DSH_VERSION=$version" >> $env:GITHUB_ENV
+          "Testing against DSH $version" >> $env:GITHUB_STEP_SUMMARY
+          Write-Host "DSH $version"
       # Installing DSH from npm takes most of this job (about 11 minutes on
       # Arm), so keep its node_modules per DSH version and architecture.
       # DSH_HOME stays outside the cached paths.
