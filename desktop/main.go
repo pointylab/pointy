@@ -99,6 +99,10 @@ func start(home, root string, pages fs.FS, sys desktop.Desktop, logError func(st
 	exe, _ := os.Executable()
 	userData, _ := mygo.App.Path(mygo.PathUserData)
 	hostPID, _ := strconv.Atoi(os.Getenv("POINTY_HOST_PID"))
+	pluginRoot := os.Getenv("POINTY_PLUGIN_ROOT")
+	if pluginRoot == "" {
+		pluginRoot = agent.FindPluginRoot(exe)
+	}
 	dsh := agent.New(agent.Deps{
 		ToCards:         windows.ToCards,
 		OnTask:          windows.OnTask,
@@ -112,7 +116,7 @@ func start(home, root string, pages fs.FS, sys desktop.Desktop, logError func(st
 	}, agent.HostOptions{
 		Managed:         config.Managed(),
 		HostPID:         hostPID,
-		PluginRoot:      agent.FindPluginRoot(exe),
+		PluginRoot:      pluginRoot,
 		Cleanup:         []string{home, userData},
 		RemoveAfterExit: sys.RemoveAfterExit,
 		Quit:            mygo.App.Quit,
@@ -137,6 +141,8 @@ func start(home, root string, pages fs.FS, sys desktop.Desktop, logError func(st
 	go func() {
 		err := server.Serve(ln, server.Routes{
 			Token:     token,
+			Version:   mygo.App.Version(),
+			Managed:   config.Managed(),
 			Plugin:    dsh.Attach,
 			Extension: exts.Authenticate,
 			Pair:      exts.Pair,

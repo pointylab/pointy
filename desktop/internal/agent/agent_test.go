@@ -188,8 +188,38 @@ func TestOrphaned(t *testing.T) {
 	}
 }
 
+func TestPluginQuit(t *testing.T) {
+	unmanagedQuit := make(chan struct{}, 1)
+	unmanaged := New(Deps{}, HostOptions{Managed: false, Quit: func() { unmanagedQuit <- struct{}{} }})
+	p1 := connect(t, serve(t, unmanaged))
+	p1.send(map[string]any{"type": "quit"})
+	p1.send(map[string]any{"type": "ready", "plugin": "1.0.0"})
+	waitFor(t, "ready after ignored quit", func() bool { return unmanaged.Status().Version == "1.0.0" })
+	select {
+	case <-unmanagedQuit:
+		t.Fatal("unmanaged Pointy quit on plugin request")
+	default:
+	}
+
+	managedQuit := make(chan struct{}, 1)
+	logged := make(chan string, 1)
+	managed := New(Deps{Log: func(kind string, _ any) { logged <- kind }}, HostOptions{Managed: true, Quit: func() { managedQuit <- struct{}{} }})
+	p2 := connect(t, serve(t, managed))
+	p2.send(map[string]any{"type": "quit"})
+	select {
+	case <-managedQuit:
+	case <-time.After(5 * time.Second):
+		t.Fatal("managed Pointy did not quit on plugin request")
+	}
+	if kind := <-logged; kind != "quit" {
+		t.Fatalf("logged %q, want quit", kind)
+	}
+}
+
 func TestUninstallCleanup(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "node_modules", "@pointylab", "dsh")
+	profile := t.TempDir()
+	manifest := filepath.Join(profile, "package.json")
+	root := filepath.Join(profile, "node_modules", "@pointylab", "dsh")
 	home := t.TempDir()
 	os.MkdirAll(root, 0o755)
 	var removed []string
@@ -200,12 +230,66 @@ func TestUninstallCleanup(t *testing.T) {
 	if removed != nil {
 		t.Fatal("cleaned up while the plugin is installed")
 	}
+
 	os.Remove(filepath.Join(root, "package.json"))
+	for _, field := range []string{"dependencies", "devDependencies", "optionalDependencies"} {
+		os.WriteFile(manifest, []byte(`{"`+field+`":{"@pointylab/dsh":"^0.5.1"}}`), 0o644)
+		h.willQuit()
+		if removed != nil {
+			t.Fatalf("cleaned up while %s still lists the plugin", field)
+		}
+	}
+
+	os.WriteFile(manifest, []byte(`{"dependencies":{"other":"1.0.0"}}`), 0o644)
 	h.willQuit()
 	if len(removed) != 2 || removed[0] != home || removed[1] != root {
 		t.Fatalf("removed %v", removed)
 	}
+
+	removed = nil
+	os.Remove(manifest)
+	h.willQuit()
+	if len(removed) != 2 || removed[0] != home || removed[1] != root {
+		t.Fatalf("removed without manifest %v", removed)
+	}
 	if FindPluginRoot(filepath.Join(root, "pet", "Pointy.app", "Contents", "MacOS", "Pointy")) != root {
 		t.Fatal("plugin root not found from the executable")
+	}
+}
+
+func TestRemovedPluginGetsTimeToComeBack(t *testing.T) {
+	defer func(q, g, p time.Duration) { quitGrace, removalGrace, removalPoll = q, g, p }(quitGrace, removalGrace, removalPoll)
+	quitGrace, removalPoll = 10*time.Millisecond, 10*time.Millisecond
+	root := filepath.Join(t.TempDir(), "node_modules", "@pointylab", "dsh")
+	os.MkdirAll(root, 0o755)
+	start := func(grace time.Duration) chan struct{} {
+		removalGrace = grace
+		quit := make(chan struct{}, 1)
+		h := newHost(HostOptions{Managed: true, PluginRoot: root, Quit: func() { quit <- struct{}{} }}, func() bool { return false }, nil)
+		h.unlinked(true)
+		return quit
+	}
+
+	// An update: the package comes back, and Pointy quits without waiting out the grace.
+	quit := start(time.Minute)
+	select {
+	case <-quit:
+		t.Fatal("quit while the plugin looked removed")
+	case <-time.After(200 * time.Millisecond):
+	}
+	os.WriteFile(filepath.Join(root, "package.json"), []byte("{}"), 0o644)
+	select {
+	case <-quit:
+	case <-time.After(5 * time.Second):
+		t.Fatal("did not quit once the plugin was back")
+	}
+
+	// An uninstall: nothing comes back, and Pointy quits once the grace is over.
+	os.Remove(filepath.Join(root, "package.json"))
+	quit = start(200 * time.Millisecond)
+	select {
+	case <-quit:
+	case <-time.After(5 * time.Second):
+		t.Fatal("did not quit after the plugin was removed")
 	}
 }

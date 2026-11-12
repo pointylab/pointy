@@ -171,6 +171,11 @@ func (a *DSH) onPluginMessage(m server.Message) {
 		a.pending = max(0, a.pending-1)
 		a.mu.Unlock()
 		a.changed()
+	case "quit":
+		if a.host.opts.Managed {
+			a.log("quit", "plugin requested quit")
+			a.host.opts.Quit()
+		}
 	}
 	switch msg.Type {
 	case "ask-done", "ask-error", "state", "title":

@@ -192,7 +192,7 @@ cd desktop && go run .
 node tools/pack-plugin.ts
 ```
 
-要在装了 Go 的 Mac 上运行。它把 `app`、`assets`、`extension` 复制进 `plugin/pet`，用 `go tool mygo build` 生成 Apple 芯片和 Intel 通用的 `plugin/pet/Pointy.app`（带页面资源，默认 ad hoc 签名），再交叉编译 Windows 的 `plugin/pet/win32-x64/Pointy.exe` 和 `plugin/pet/win32-arm64/Pointy.exe`（不用 cgo；图标和按显示器感知 DPI 的清单由 mygo 生成，打包时再在清单里写上 `asInvoker`），最后 `npm pack` 生成 `dist/pointylab-dsh-<版本>.tgz`。macOS 上插件通过 `open` 启动包里的 Pointy.app，这样系统把辅助功能和屏幕录制权限记在 Pointy 名下；Windows 上插件直接启动对应架构的 Pointy.exe，它读 `plugin/pet` 里的页面。以前装过的 `~/.pointy/runtime`（Electron）会被删除，设置保留。在 Windows 或 Linux 上可以用 `node tools/pack-plugin.ts --windows-only` 打一个只有 Windows 程序的包，用来测试。
+要在装了 Go 的 Mac 上运行。它把 `app`、`assets`、`extension` 复制进 `plugin/pet`，用 `go tool mygo build` 生成 Apple 芯片和 Intel 通用的 `plugin/pet/Pointy.app`（带页面资源，默认 ad hoc 签名），再交叉编译 Windows 的 `plugin/pet/win32-x64/Pointy.exe` 和 `plugin/pet/win32-arm64/Pointy.exe`（不用 cgo；图标和按显示器感知 DPI 的清单由 mygo 生成，打包时再在清单里写上 `asInvoker`），最后 `npm pack` 生成 `dist/pointylab-dsh-<版本>.tgz`。macOS 上插件通过 `open` 启动包里的 Pointy.app，这样系统把辅助功能和屏幕录制权限记在 Pointy 名下；Windows 上插件先把对应架构的 Pointy.exe 和页面复制到 `~/.pointy/app/<版本>/` 再启动（包目录里有运行中的文件会让 DSH 更新失败）。以前装过的 `~/.pointy/runtime`（Electron）会被删除，设置保留。在 Windows 或 Linux 上可以用 `node tools/pack-plugin.ts --windows-only` 打一个只有 Windows 程序的包，用来测试。
 
 签名和公证是可选的：设了 `APPLE_SIGNING_IDENTITY` 就用这个 Developer ID 签名，再设 `APPLE_NOTARY_PROFILE`（`xcrun notarytool store-credentials` 存的配置名）就公证并装订。`.github/workflows/package.yml` 在 macOS 上跑检查并打包，产物是同一个 tgz；仓库配了 `APPLE_CERTIFICATE` 等 secrets 时才签名和公证，没配就 ad hoc。插件没有 npm 依赖。
 

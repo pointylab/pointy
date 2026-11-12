@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json/v2"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,9 +11,16 @@ import (
 	"time"
 )
 
-const (
-	orphanPoll = 5 * time.Second
-	quitGrace  = 10 * time.Second
+const orphanPoll = 5 * time.Second
+
+// Variables so tests can shorten them.
+var (
+	quitGrace = 10 * time.Second
+	// DSH updates a plugin by removing it and then installing the new
+	// version, which can take a while to download. A plugin that looks
+	// removed gets this long to come back before Pointy quits and cleans up.
+	removalGrace = 2 * time.Minute
+	removalPoll  = 2 * time.Second
 )
 
 // HostOptions describe how DSH runs Pointy.
@@ -22,8 +30,8 @@ type HostOptions struct {
 	Managed bool
 	// HostPID is POINTY_HOST_PID, the DSH process.
 	HostPID int
-	// PluginRoot is the plugin's install directory, when Pointy runs from
-	// one; uninstalling the plugin removes its package.json.
+	// PluginRoot is the plugin's install directory (POINTY_PLUGIN_ROOT, or
+	// inferred from the executable path).
 	PluginRoot string
 	// Cleanup lists what goes with the plugin: Pointy's home and data.
 	Cleanup []string
@@ -80,25 +88,64 @@ func (h *host) unlinked(everConnected bool) {
 		h.quit.Stop()
 	}
 	if everConnected && h.opts.Managed {
-		h.quit = time.AfterFunc(quitGrace, func() {
-			if !h.connected() {
-				h.opts.Quit()
+		deadline := time.Now().Add(removalGrace)
+		var check func()
+		check = func() {
+			if h.connected() {
+				return
 			}
-		})
+			if h.uninstalled() && time.Now().Before(deadline) {
+				h.mu.Lock()
+				h.quit = time.AfterFunc(removalPoll, check)
+				h.mu.Unlock()
+				return
+			}
+			h.opts.Quit()
+		}
+		h.quit = time.AfterFunc(quitGrace, check)
 	}
 }
 
+const pluginPackage = "@pointylab/dsh"
+
 var pluginDir = regexp.MustCompile(`(?i)[\\/]node_modules[\\/]@pointylab[\\/]dsh$`)
 
-// uninstalled reports whether DSH removed the plugin: pnpm deletes its
-// package.json, while files Pointy holds open stay behind.
+// uninstalled reports whether DSH removed the plugin: its package.json is
+// gone and the profile manifest no longer lists @pointylab/dsh (a failed
+// in-place update can leave the package directory without package.json while
+// the dependency remains in the manifest).
 func (h *host) uninstalled() bool {
-	root := h.opts.PluginRoot
-	if root == "" || !pluginDir.MatchString(root) {
+	if h.opts.PluginRoot == "" {
 		return false
 	}
-	_, err := os.Stat(filepath.Join(root, "package.json"))
-	return os.IsNotExist(err)
+	root := filepath.Clean(h.opts.PluginRoot)
+	if !pluginDir.MatchString(root) {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(root, "package.json")); !os.IsNotExist(err) {
+		return false
+	}
+	manifest := filepath.Join(root, "..", "..", "..", "package.json")
+	return !hasPluginDep(manifest)
+}
+
+func hasPluginDep(manifest string) bool {
+	b, err := os.ReadFile(manifest)
+	if err != nil {
+		return false
+	}
+	var pkg struct {
+		Dependencies         map[string]any `json:"dependencies"`
+		DevDependencies      map[string]any `json:"devDependencies"`
+		OptionalDependencies map[string]any `json:"optionalDependencies"`
+	}
+	if json.Unmarshal(b, &pkg) != nil {
+		return false
+	}
+	_, dep := pkg.Dependencies[pluginPackage]
+	_, dev := pkg.DevDependencies[pluginPackage]
+	_, opt := pkg.OptionalDependencies[pluginPackage]
+	return dep || dev || opt
 }
 
 func (h *host) willQuit() {

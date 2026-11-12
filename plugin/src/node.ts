@@ -6,7 +6,7 @@ import path from 'node:path'
 import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { activityOf } from './activity.ts'
 import { composeAsk, composeFirst, isOurPreamble } from './compose.ts'
-import { type Logger, PET_APP_DIR, petLaunch } from './runtime.ts'
+import { APP_DIR, cleanOldApps, type Logger, MAX_REPLACE_ATTEMPTS, peerAction, petLaunch, PLUGIN_ROOT } from './runtime.ts'
 
 interface Route { provider: string, model: string }
 interface Agent { followup(message: unknown): void }
@@ -37,7 +37,9 @@ type PetMessage =
   | { type: 'focus', sessionId: unknown }
   | Extract<CardRequest, { type: 'suggest-request' }>
   | Omit<AskRequest, 'model' | 'images'> & { model?: ModelChoice, images?: unknown }
-type HandshakeMessage = { type: 'challenge', nonce: string } | { type: 'hello-ok', proof: unknown, runtime?: unknown }
+type HandshakeMessage =
+  | { type: 'challenge', nonce: string }
+  | { type: 'hello-ok', proof: unknown, runtime?: unknown, version?: unknown, managed?: unknown }
 
 interface SessionItem {
   sessionId: string
@@ -67,7 +69,8 @@ const TOKEN_FILE = path.join(PET_DIR, 'token')
 const PET_LOG = path.join(PET_DIR, 'pet.log')
 const PET_LOG_MAX = 256 * 1024
 const RECONNECT_MS = 3000
-/** An Electron Pointy that DSH started quits 10 s after its plugin goes away. */
+const REPLACE_RETRY_MS = 1000
+/** A Pointy without explicit quit support exits 10 s after its plugin goes away. */
 const ELECTRON_QUIT_MS = 15_000
 /** Events older than this are replays (session load), not live activity. */
 const STALE_EVENT_MS = 30_000
@@ -81,7 +84,7 @@ const MAX_DROPPED_FILES = 20
 /** Desktop DSH runs plugins through dsh-desktop-host/lib/index.js; the web UI (`dsh <profile>`) goes through lib/cli.js. */
 const DESKTOP = process.argv.some((a) => /dsh-desktop-host[\\/]lib[\\/]index\.js$/.test(a))
 const PLUGIN_VERSION: string = (() => {
-  try { return JSON.parse(fs.readFileSync(path.join(PET_APP_DIR, '..', 'package.json'), 'utf8')).version } catch { return '?' }
+  try { return JSON.parse(fs.readFileSync(path.join(PLUGIN_ROOT, 'package.json'), 'utf8')).version } catch { return '?' }
 })()
 
 const PERSONA = [
@@ -145,22 +148,28 @@ function openPetLog() {
 function launchPet(logger: Logger) {
   let launch
   try {
-    launch = petLaunch(logger, PET_LOG)
+    launch = petLaunch(logger, PET_LOG, PLUGIN_VERSION)
   } catch (error) {
     return logger.warn(`pointy: cannot start Pointy: ${(error as Error).message}`)
   }
   logger.info(`pointy: starting Pointy: ${launch.exe} ${launch.args.join(' ')}`)
   // DSH desktop runs plugins in Electron's node mode; apps Pointy opens must not inherit that.
-  const env: NodeJS.ProcessEnv = { ...process.env, POINTY_MANAGED: '1', POINTY_HOST_PID: String(process.pid) }
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    POINTY_MANAGED: '1',
+    POINTY_HOST_PID: String(process.pid),
+    POINTY_PLUGIN_ROOT: PLUGIN_ROOT,
+  }
   delete env.ELECTRON_RUN_AS_NODE
   delete env.NODE_OPTIONS
   try {
     const out = openPetLog()
-    const child = spawn(launch.exe, launch.args, { cwd: PET_APP_DIR, env, detached: true, stdio: ['ignore', out, out] })
+    const child = spawn(launch.exe, launch.args, { cwd: launch.cwd, env, detached: true, stdio: ['ignore', out, out] })
     fs.closeSync(out)
     child.on('error', (error) => logger.warn(`pointy: failed to start Pointy: ${error.message}`))
     child.on('exit', (code) => { if (code) logger.warn(`pointy: ${path.basename(launch.exe)} exited with ${code}, see ${PET_LOG}`) })
     child.unref()
+    if (process.platform === 'win32') cleanOldApps(APP_DIR, PLUGIN_VERSION)
   } catch (error) {
     logger.warn(`pointy: failed to start Pointy: ${(error as Error).message}`)
   }
@@ -175,6 +184,8 @@ class PetLink {
   timer: ReturnType<typeof setTimeout> | undefined
   /** No reconnecting before this time. */
   waitUntil: number
+  retryDelay: number | undefined
+  replaceAttempts: number
   onReady: () => void
   onLost: () => void
   onUnreachable: () => void
@@ -187,6 +198,8 @@ class PetLink {
     this.stopped = false
     this.timer = undefined
     this.waitUntil = 0
+    this.retryDelay = undefined
+    this.replaceAttempts = 0
     this.onReady = () => {}
     this.onLost = () => {}
     this.onUnreachable = () => {}
@@ -232,6 +245,25 @@ class PetLink {
           ws.close()
           return
         }
+        const action = peerAction(msg, PLUGIN_VERSION, this.replaceAttempts)
+        if (action === 'quit') {
+          this.replaceAttempts++
+          this.logger.info(`pointy: Pointy ${msg.version} holds the port (plugin is ${PLUGIN_VERSION}); asking it to quit`)
+          ws.send(JSON.stringify({ type: 'quit' }))
+          this.retryDelay = REPLACE_RETRY_MS
+          ws.close()
+          return
+        }
+        if (action === 'wait') {
+          this.replaceAttempts++
+          this.logger.info(`pointy: an older Pointy holds the port (plugin is ${PLUGIN_VERSION}); leaving it to quit`)
+          this.waitUntil = Date.now() + ELECTRON_QUIT_MS
+          ws.close()
+          return
+        }
+        if (action === 'give-up') {
+          this.logger.warn(`pointy: could not replace Pointy ${typeof msg.version === 'string' ? msg.version : 'unknown'} after ${MAX_REPLACE_ATTEMPTS} attempts; using it as is`)
+        }
         this.authed = true
         this.onReady()
       } else if (this.authed) {
@@ -252,7 +284,9 @@ class PetLink {
   retry() {
     if (this.stopped) return
     clearTimeout(this.timer)
-    this.timer = setTimeout(() => this.connect(), Math.max(RECONNECT_MS, this.waitUntil - Date.now()))
+    const base = this.retryDelay ?? RECONNECT_MS
+    this.retryDelay = undefined
+    this.timer = setTimeout(() => this.connect(), Math.max(base, this.waitUntil - Date.now()))
   }
 
   send(msg: object) {
