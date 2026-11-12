@@ -107,8 +107,6 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    env:
-      DSH_VERSION: 0.2.2-rc.1
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -128,6 +126,36 @@ jobs:
           name: pointylab-dsh-windows
           path: dist/*.tgz
           if-no-files-found: error
+      # Test against the DSH users get: whatever npm tags latest today, so a
+      # DSH release that breaks Pointy fails the next run.
+      - name: Resolve the latest DSH
+        run: |
+          $version = npm view '@deepseek-ai/dsh@latest' version
+          if ($LASTEXITCODE -ne 0 -or -not $version) { throw 'could not read the latest DSH version from npm' }
+          "DSH_VERSION=$version" >> $env:GITHUB_ENV
+          "Testing against DSH $version" >> $env:GITHUB_STEP_SUMMARY
+          Write-Host "DSH $version"
+      # Installing DSH from npm takes most of this job (about 11 minutes on
+      # Arm), so keep its node_modules per DSH version and architecture.
+      # DSH_HOME stays outside the cached paths.
+      - name: Restore DSH
+        id: dsh-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/dsh/node_modules
+            ${{ runner.temp }}/dsh/package.json
+            ${{ runner.temp }}/dsh/package-lock.json
+          key: dsh-${{ env.DSH_VERSION }}-${{ runner.os }}-${{ runner.arch }}-node24
+      - name: Install DSH
+        if: steps.dsh-cache.outputs.cache-hit != 'true'
+        run: |
+          $scratch = Join-Path $env:RUNNER_TEMP 'dsh'
+          New-Item -ItemType Directory -Force $scratch | Out-Null
+          Push-Location $scratch
+          npm init -y | Out-Null
+          npm i "@deepseek-ai/dsh@$env:DSH_VERSION" --no-fund --no-audit
+          Pop-Location
       - name: Install the package into DSH and start it
         run: |
           $out = New-Item -ItemType Directory -Force out
@@ -139,11 +167,6 @@ jobs:
           }
 
           $scratch = Join-Path $env:RUNNER_TEMP 'dsh'
-          New-Item -ItemType Directory -Force $scratch | Out-Null
-          Push-Location $scratch
-          npm init -y | Out-Null
-          npm i "@deepseek-ai/dsh@$env:DSH_VERSION" --no-fund --no-audit
-          Pop-Location
           # DSH installs plugins with pnpm.
           npm i -g pnpm@10 --no-fund --no-audit
           $env:DSH_HOME = Join-Path $scratch 'home'
