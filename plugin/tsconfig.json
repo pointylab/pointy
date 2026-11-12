@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleDetection": "legacy",
+    "lib": ["es2023", "dom"],
+    "types": ["node"],
+    "rootDir": ".",
+    "outDir": "build"
+  },
+  "include": ["src/**/*.ts", "lib/**/*.ts"]
+}

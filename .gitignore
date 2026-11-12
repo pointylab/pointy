@@ -9,3 +9,6 @@ plugin/pet/
 plugin/README.md
 plugin/LICENSE
 plugin/ASSETS.md
+build/
+plugin/build/
+desktop/bin/

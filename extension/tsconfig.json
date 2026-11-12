@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleDetection": "force",
+    "moduleResolution": "bundler",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": ["chrome"],
+    "rootDir": ".",
+    "outDir": "../build/extension"
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["pick.ts"]
+}
