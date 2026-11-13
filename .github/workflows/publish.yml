@@ -91,4 +91,5 @@ jobs:
       - name: Publish to npm
         run: |
           npm install -g npm@^11.5.1
-          npm publish "$TGZ" --access public
+          # "./" keeps npm from reading pkg/<file>.tgz as a GitHub owner/repo spec.
+          npm publish "./$TGZ" --access public
