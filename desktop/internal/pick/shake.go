@@ -11,7 +11,7 @@ const (
 	shakePoll     = 16 * time.Millisecond
 	shakeCooldown = 1500 * time.Millisecond
 	shakeMinSeen  = 6
-	maxVertical   = 120
+	maxCrossRatio = 0.75
 )
 
 // shakeLevel is how hard the mouse must shake: this many reversals of at
@@ -55,13 +55,12 @@ func (s *shaker) feed(now time.Time, p desktop.Point, level config.ShakeLevel, a
 	if len(s.samples) < shakeMinSeen || now.Sub(s.lastFire) < shakeCooldown {
 		return false
 	}
-	xs := make([]float64, len(s.samples))
-	top, bottom := p.Y, p.Y
+	pts := make([]desktop.Point, len(s.samples))
 	for i, x := range s.samples {
-		xs[i] = x.p.X
-		top, bottom = min(top, x.p.Y), max(bottom, x.p.Y)
+		pts[i] = x.p
 	}
-	if countReversals(xs, l.amplitude) < l.reversals || bottom-top > maxVertical || !allowed() {
+	along, mainSpan, crossSpan := projectMainAxis(pts)
+	if countReversals(along, l.amplitude) < l.reversals || crossSpan > maxCrossRatio*mainSpan || !allowed() {
 		return false
 	}
 	s.lastFire = now

@@ -46,11 +46,40 @@ func TestShakeWaitsOutTheCooldown(t *testing.T) {
 	}
 }
 
-func TestShakeIgnoresTallMovement(t *testing.T) {
-	var s shaker
+func TestShakeFiresAlongDiagonalAndArc(t *testing.T) {
+	var diag shaker
 	ys := []float64{0, 200, 0, 200, 0, 200, 0}
-	if got := swing(&s, time.Unix(0, 0), shakeXs, ys, true); len(got) != 0 {
-		t.Fatalf("fired at %v for a movement %d tall", got, 200)
+	if got := swing(&diag, time.Unix(0, 0), shakeXs, ys, true); len(got) != 1 || got[0] != 5 {
+		t.Fatalf("diagonal shake fired at %v, want once at sample 5", got)
+	}
+	var arc shaker
+	arcXs := []float64{800, 680, 790, 650, 780, 660, 770}
+	arcYs := []float64{100, 290, 130, 350, 150, 330, 170}
+	if got := swing(&arc, time.Unix(0, 0), arcXs, arcYs, true); len(got) != 1 || got[0] != 5 {
+		t.Fatalf("arc shake fired at %v, want once at sample 5", got)
+	}
+}
+
+func TestShakeIgnoresLongSweep(t *testing.T) {
+	var s shaker
+	xs := []float64{100, 260, 430, 610, 790, 960, 1120}
+	ys := []float64{700, 600, 490, 390, 290, 200, 120}
+	if got := swing(&s, time.Unix(0, 0), xs, ys, true); len(got) != 0 {
+		t.Fatalf("fired at %v for a one-way sweep across the screen", got)
+	}
+}
+
+func TestShakeIgnoresWideDriftAcrossSwing(t *testing.T) {
+	var drift shaker
+	ys := []float64{0, 50, 100, 150, 200, 250, 300}
+	if got := swing(&drift, time.Unix(0, 0), shakeXs, ys, true); len(got) != 0 {
+		t.Fatalf("fired at %v while sweeping vertically with a small horizontal wobble", got)
+	}
+	var loop shaker
+	loopXs := []float64{100, 150, 200, 150, 100, 150, 200, 150, 100}
+	loopYs := []float64{150, 200, 150, 100, 150, 200, 150, 100, 150}
+	if got := swing(&loop, time.Unix(0, 0), loopXs, loopYs, true); len(got) != 0 {
+		t.Fatalf("fired at %v for a circular movement", got)
 	}
 }
 
