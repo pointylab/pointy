@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"runtime"
+
 	"github.com/pointylab/pointy/desktop/internal/config"
 	"github.com/pointylab/pointy/desktop/internal/i18n"
 )
@@ -42,5 +44,14 @@ func (u *UI) archiveHint(sessionID string) string {
 		u.log("settings", err)
 		return ""
 	}
-	return i18n.T(i18n.HintArchived)
+	return i18n.T(archivedHint())
+}
+
+// archivedHint names where the setting lives: the menu bar on macOS, the
+// system tray on Windows.
+func archivedHint() i18n.Key {
+	if runtime.GOOS == "darwin" {
+		return i18n.HintArchivedMac
+	}
+	return i18n.HintArchivedWin
 }

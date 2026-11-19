@@ -58,7 +58,8 @@
     "elevated": "这个程序以管理员身份运行，Pointy 读不到",
     "noHook": "拦不住这次点击，没法指认。要先允许 Pointy 使用辅助功能",
     "webSession": "已在浏览器里的 {agent} 切到这个会话",
-    "archived": "已归档这个会话，可在 DSH 里恢复；托盘里可以关掉",
+    "archivedMac": "已归档这个会话，可在 DSH 里恢复；菜单栏里可以关掉",
+    "archivedWin": "已归档这个会话，可在 DSH 里恢复；托盘里可以关掉",
     "blockedPassword": "密码框里的内容 Pointy 不读",
     "blockedLogin": "登录和支付页面 Pointy 不读",
     "blockedApp": "这个程序 Pointy 不读"

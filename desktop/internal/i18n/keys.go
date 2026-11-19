@@ -26,11 +26,12 @@ var (
 	ApprovalTitle = key("approval.title")
 	ApprovalBody  = key("approval.body")
 
-	HintAccess     = key("hint.access")
-	HintElevated   = key("hint.elevated")
-	HintNoHook     = key("hint.noHook")
-	HintWebSession = key("hint.webSession")
-	HintArchived   = key("hint.archived")
+	HintAccess      = key("hint.access")
+	HintElevated    = key("hint.elevated")
+	HintNoHook      = key("hint.noHook")
+	HintWebSession  = key("hint.webSession")
+	HintArchivedMac = key("hint.archivedMac")
+	HintArchivedWin = key("hint.archivedWin")
 
 	HintBlockedPassword = key("hint.blockedPassword")
 	HintBlockedLogin    = key("hint.blockedLogin")
