@@ -1,13 +1,13 @@
 ---
 name: verify-pointy
-description: Drive the Go (mygo) build of Pointy on macOS the way a user does, against an isolated DSH with a mock model, and capture screenshots and logs as proof. Use to verify any change to the desktop runtime, the pages (card, pill, notices, overlay), the plugin, or the language of Pointy's texts before calling it done.
+description: Drive the Go (mygo) build of Pointy the way a user does and capture screenshots and logs as proof, on macOS against an isolated DSH with a mock model, and on Windows with Pointy alone. Use to verify any change to the desktop runtime, the pages (card, pill, notices, overlay), the plugin, or the language of Pointy's texts before calling it done.
 ---
 
 # verify-pointy
 
 Pointy is a menu bar app: shake the mouse over any window, point at something, and a card asks DSH about it. The Go runtime in `desktop/` draws the tray, hints and notifications and opens web pages from `build/app/` (card, pill, notice, overlay). The DSH plugin in `plugin/` relays between DSH and Pointy over `127.0.0.1:$POINTY_PORT`.
 
-A run here starts its own Pointy, DSH and model on scratch homes and ports, and never touches Jesse's: his Pointy (47321), his DSH (3080) and his `~/.pointy` stay as they are. The Windows build is not covered; this skill is macOS only.
+A run here starts its own Pointy, DSH and model on scratch homes and ports, and never touches Jesse's: his Pointy (47321), his DSH (3080) and his `~/.pointy` stay as they are. Everything up to "Windows" below is the macOS half; the Windows half has scripts of its own in `scripts/win/`.
 
 ## Safety rules
 
@@ -83,6 +83,55 @@ zsh .claude/skills/verify-pointy/scripts/down.sh
 ```
 
 Kills the recorded PIDs and their children and closes the fixture documents the run opened. Deletes the scratch homes, the binaries and the socket. `$VP_RUN/evidence` stays. Run it after every run, failed ones too.
+
+## Windows
+
+`scripts/win/` holds the Windows half: PowerShell 7 scripts and the Windows build of `desktop/cmd/drive`. It starts the e2e build of Pointy alone, without DSH or the mock model, so it covers what Pointy does by itself: the tray, the pointing overlay, notices and Settings. Run the scripts with `pwsh -NoProfile -File`. They need Go and Node on PATH, a desktop session that is unlocked, and port 47397 free.
+
+```powershell
+pwsh -NoProfile -File .claude/skills/verify-pointy/scripts/win/up.ps1 -Locale zh-CN   # -Repo <checkout> builds another checkout
+pwsh -NoProfile -File .claude/skills/verify-pointy/scripts/win/doctor.ps1
+pwsh -NoProfile -File .claude/skills/verify-pointy/scripts/win/down.ps1
+```
+
+`up.ps1` makes a run directory under `%TEMP%\verify-pointy\` and records it in `%TEMP%\verify-pointy\current`, so every later script, each in a fresh shell, finds the run without `VP_RUN`. It builds the pages, the e2e Pointy and `mygo-automation` from the checkout (`-Repo`, default this one) and `drive` from this checkout, so an older branch can be tested with the current tools. It then seeds `settings.json` as the macOS half does and starts Pointy with `POINTY_HOME`, `POINTY_PORT=47397`, `POINTY_ROOT` and `MYGO_AUTOMATION` set. `down.ps1` stops the recorded processes with their WebView2 children, copies Pointy's `settings.json` and logs into the evidence, and deletes the rest.
+
+| Script | Does |
+| --- | --- |
+| `tray.ps1 <name> [item [subitem]]` | Opens the tray menu as a right click on the icon does, logs its items with their check marks, saves `<name>-tray.png`, then clicks `item` > `subitem`. With an item that has a submenu and no subitem, it opens the submenu, lists and shows it, and closes the menu. |
+| `keys.ps1 <combo> [-To pointy\|fixture\|both]` | Presses a key combination such as `Ctrl+Alt+K` or `Esc` with real input, only while the foreground window is Pointy's (or the fixture's). |
+| `fixture.ps1` | Opens the run's own window with `fixture.txt` in a text box, brings it to the front and prints its HWND and bounds. Notepad is no fixture on Windows 11: it opens files as tabs of a window the user may own. |
+| `hold-hotkey.ps1 <mods> <vk> <ready file>` | Registers a global shortcut from another process, as an app that already holds it does. |
+
+`env.ps1` gives the same helpers as `env.sh`: `Drive`, `Pa`, `Js`, `Win-Of`, `Has-Page`, `Shot-Page`, `Read-Settings`, `Guard`, `Mine`, `Wait-Until` and `Log`.
+
+`drive` on Windows takes `move`, `shake`, `click`, `at`, `front`, `idle`, `locked`, `windows`, `displays` and `cursor` as on macOS, and adds `tray`, `menus`, `keys`, `type`, `focus`, `shot` and `shotwin` (usage at the top of `desktop/cmd/drive/main_windows.go`). Coordinates are physical pixels.
+
+How the Windows half differs from the rules above:
+
+- **Real keys are allowed, into the run's windows only.** WebView2 sees no `KeyboardEvent.code` from `eval`, so recording a shortcut needs real input. `drive keys` sends nothing unless the foreground window belongs to a PID it was given, and it sends scan codes, without which `code` is empty. A combination another app has registered goes to that app, never to the page.
+- **`Guard` still waits for 30 s of idle.** `drive` records its own input in `$VP_RUN\input-stamp`, so `drive idle` does not count it as the user's.
+- **The tray opens without a click on the icon.** Windows hides tray icons in the overflow by default, so `drive tray` posts the message the icon would send to Pointy's `MyGoApp` window. It then clicks the menu items with the real mouse and checks before each move that the point is a menu of Pointy's. A submenu opens on hover only after the cursor really moves, which `drive tray` does.
+- Screenshots of pages come from `Pa screenshot`. Screenshots of native windows, menus and the overlay come from `drive shot` and `drive shotwin`.
+
+### E2E tray entries
+
+The e2e build binds `E2E.TrayMenu()`, which returns the tray's items as a tree with their check marks, and `E2E.ChooseTray(path)`, which acts as a click on the item at that label path, for example `["Language", "English"]`. It returns an error string when there is no such item. They reach the tray where a test cannot click it, such as a macOS runner without Accessibility, so they skip the user path. Keep a real click for every feature as well.
+
+```powershell
+$e = ((Pa windows | Where-Object { $_ -match '"e2e"' }) -split '\s+')[0]
+Pa eval --window $e "return window.mygo.call('E2E.ChooseTray', ['Do Not Disturb'])"
+```
+
+### Scenarios
+
+`scenarios/` holds whole runs that go from `up` to `down` in one command and print `PASS`/`FAIL` per check, for example:
+
+```powershell
+pwsh -NoProfile -File .claude/skills/verify-pointy/scenarios/hotkey.ps1 [-Repo <checkout>] [-Keep]
+```
+
+`-Keep` leaves the run up for a look; run `down.ps1` after.
 
 ## Feature map
 

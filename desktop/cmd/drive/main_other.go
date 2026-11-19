@@ -1,7 +1,7 @@
-//go:build !darwin
+//go:build !darwin && !windows
 
-// Command drive posts real mouse input for tests of pointing; it runs on
-// macOS only for now.
+// Command drive posts real input for tests of pointing; it runs on macOS
+// and Windows only.
 package main
 
 import (
