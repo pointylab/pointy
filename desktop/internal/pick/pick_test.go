@@ -137,6 +137,30 @@ func TestBrowserPickGetsTheCursorInDevicePixels(t *testing.T) {
 	}
 }
 
+func TestHotkeyPicksAtTheCursorUnlessACardIsFocused(t *testing.T) {
+	r := newRig(t)
+	r.d.front = &desktop.Foreground{ID: 8, PID: 8, Exe: "google chrome", Title: "Example"}
+	b := &fakeBrowser{}
+	d := r.deps()
+	d.Settings = config.LoadSettings(t.TempDir())
+	d.Settings.Update(func(s *config.Settings) { s.Shake = false })
+	d.Suppressed = func() bool { return false }
+	d.Browser = b
+	focused := true
+	d.CardFocused = func() bool { return focused }
+	p := New(d)
+
+	p.PickAtCursor()
+	if b.cursor != (desktop.Point{}) {
+		t.Fatalf("picked at %+v while a card had focus", b.cursor)
+	}
+	focused = false
+	p.PickAtCursor()
+	if b.cursor != (desktop.Point{X: 1000, Y: 600}) {
+		t.Fatalf("cursor %+v, want 1000,600 with shake off", b.cursor)
+	}
+}
+
 func TestPageRefusingAPasswordFieldSaysWhy(t *testing.T) {
 	r := newRig(t)
 	r.d.front = &desktop.Foreground{ID: 8, PID: 8, Exe: "google chrome", Title: "Example"}

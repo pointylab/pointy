@@ -119,6 +119,7 @@ export interface NoticeInit {
   title: Message;
   body: NoticeParagraph[];
   buttons?: NoticeButton[];
+  record?: NoticeRecord;
 }
 
 /**
@@ -128,6 +129,15 @@ export interface NoticeInit {
 export interface NoticeParagraph {
   text: Message;
   copy?: string[];
+}
+
+/** NoticeRecord puts a notice into shortcut-recording mode. */
+export interface NoticeRecord {
+  current?: string;
+  platform: string;
+  placeholder: Message;
+  needModifier: Message;
+  unsupported: Message;
 }
 
 /**
@@ -264,6 +274,13 @@ export const Notice = {
   },
   resize(height: number): Promise<void> {
     return call("Notice.Resize", height);
+  },
+  /**
+   * SaveHotkey binds acc and writes it to Settings, closing the notice on
+   * success and returning the message to show when binding fails.
+   */
+  saveHotkey(acc: string): Promise<string> {
+    return call("Notice.SaveHotkey", acc);
   },
 } as const;
 

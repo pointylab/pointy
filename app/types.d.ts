@@ -23,7 +23,8 @@ type PillItem = import('./bridge/mygo.ts').PillItem
 type NoticeText = string | Message
 interface NoticeButton { id: string; label: NoticeText; primary?: boolean }
 type NoticeParagraph = NoticeText | { text: NoticeText; copy: string[] }
-interface NoticeInit { title: NoticeText; body: NoticeParagraph[]; buttons?: NoticeButton[] }
+type NoticeRecord = import('./bridge/mygo.ts').NoticeRecord
+interface NoticeInit { title: NoticeText; body: NoticeParagraph[]; buttons?: NoticeButton[]; record?: NoticeRecord }
 type IntroInit = import('./bridge/mygo.ts').IntroInit
 type LocalRect = import('./bridge/mygo.ts').LocalRect
 type OverlayHighlight = import('./bridge/mygo.ts').OverlayHighlight
@@ -58,6 +59,7 @@ interface PillApi {
 interface NoticeApi {
   onInit(fn: (data: NoticeInit) => void): void
   choose(id: string | null): void
+  saveHotkey(acc: string): Promise<string>
   resize(height: number): void
   copy(text: string): void
 }

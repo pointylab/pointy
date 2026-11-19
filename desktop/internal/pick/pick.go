@@ -96,6 +96,15 @@ func (p *Picker) Watch(stop <-chan struct{}) {
 	watchShakes(p.d.Desktop, level, p.shakeAllowed, func(at desktop.Point) { go p.Pick(at) }, stop)
 }
 
+// PickAtCursor opens a card on what is at the mouse unless the current card
+// has the keyboard.
+func (p *Picker) PickAtCursor() {
+	if p.d.CardFocused != nil && p.d.CardFocused() {
+		return
+	}
+	p.Pick(p.d.Desktop.Cursor())
+}
+
 // Cancel ends the pick in progress, if any.
 func (p *Picker) Cancel() {
 	p.mu.Lock()

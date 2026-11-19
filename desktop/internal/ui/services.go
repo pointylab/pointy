@@ -128,6 +128,19 @@ func (s *Notice) Copy(ctx context.Context, text string) {
 	s.with(ctx, func(*notice) { mygo.Clipboard.WriteText(text) })
 }
 
+// SaveHotkey binds acc and writes it to Settings, closing the notice on
+// success and returning the message to show when binding fails.
+func (s *Notice) SaveHotkey(ctx context.Context, acc string) string {
+	if s.u.deps.Hotkey == nil {
+		return ""
+	}
+	if msg := s.u.deps.Hotkey.Save(acc); msg != "" {
+		return msg
+	}
+	s.with(ctx, func(n *notice) { s.u.finishNotice(n, &acc) })
+	return ""
+}
+
 // Intro is window.intro.
 type Intro struct{ u *UI }
 

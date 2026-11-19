@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/egoist/mygo"
@@ -124,5 +126,88 @@ func TestTrayTurnsAutoArchiveOff(t *testing.T) {
 	_, items = trayContent(d)
 	if it := find(items, "关闭卡片时归档会话"); it.Checked {
 		t.Fatal("auto-archive still checked")
+	}
+}
+
+func TestTrayHotkey(t *testing.T) {
+	settings := config.LoadSettings(t.TempDir())
+	rebinds := make(chan struct{}, 2)
+	taken := false
+	recorded := make(chan struct{}, 1)
+	d := TrayDeps{
+		Settings:           settings,
+		Visibility:         NewVisibility(settings),
+		Agent:              func() agent.Status { return agent.Status{Connected: true} },
+		Extensions:         func() int { return 1 },
+		ShowHotkeyRecorder: func() { recorded <- struct{}{} },
+		HotkeyChanged:      func() { rebinds <- struct{}{} },
+		HotkeyTaken:        func() bool { return taken },
+	}
+
+	_, items := trayContent(d)
+	if len(items) < 2 || items[1].Label != "快捷键" {
+		t.Fatalf("hotkey submenu missing below shake: %+v", items)
+	}
+	sub := items[1].Submenu
+	if len(sub) != 6 || !sub[0].Checked || sub[0].Label != "关" || sub[4].Type != mygo.MenuItemSeparator || sub[5].Label != "自定义…" {
+		t.Fatalf("default hotkey submenu: %+v", sub)
+	}
+	click(sub[5])
+	<-recorded
+
+	presetLabel := formatHotkey("CmdOrCtrl+Alt+P", runtime.GOOS)
+	click(find(sub, presetLabel))
+	<-rebinds
+	if settings.Get().Hotkey != "CmdOrCtrl+Alt+P" {
+		t.Fatalf("hotkey %q", settings.Get().Hotkey)
+	}
+	taken = true
+	tip, items := trayContent(d)
+	sub = items[1].Submenu
+	if sub[0].Checked || !find(sub, presetLabel).Checked {
+		t.Fatal("chosen hotkey not checked")
+	}
+	wantTaken := "快捷键 " + presetLabel + " 被其他程序占用"
+	if !strings.Contains(tip, wantTaken) {
+		t.Fatalf("tooltip %q, want %q", tip, wantTaken)
+	}
+	taken = false
+	if tip, _ = trayContent(d); strings.Contains(tip, wantTaken) {
+		t.Fatalf("tooltip still shows taken after success: %q", tip)
+	}
+	taken = true
+	click(find(sub, "关"))
+	<-rebinds
+	tip, items = trayContent(d)
+	if settings.Get().Hotkey != "" || !items[1].Submenu[0].Checked || strings.Contains(tip, "被其他程序占用") {
+		t.Fatalf("after off: hotkey %q tip %q", settings.Get().Hotkey, tip)
+	}
+
+	settings.Update(func(s *config.Settings) { s.Hotkey = "CmdOrCtrl+Shift+K" })
+	_, items = trayContent(d)
+	sub = items[1].Submenu
+	customLabel := formatHotkey("CmdOrCtrl+Shift+K", runtime.GOOS)
+	if len(sub) != 7 || !find(sub, customLabel).Checked || sub[6].Label != "自定义…" {
+		t.Fatalf("custom hotkey not shown as checked item: len=%d", len(sub))
+	}
+}
+
+func TestFormatHotkey(t *testing.T) {
+	cases := []struct {
+		acc, goos, want string
+	}{
+		{"CmdOrCtrl+Alt+P", "windows", "Ctrl+Alt+P"},
+		{"CmdOrCtrl+Alt+P", "darwin", "⌘⌥P"},
+		{"Alt+Shift+Space", "windows", "Alt+Shift+Space"},
+		{"Alt+Shift+Space", "darwin", "⌥⇧Space"},
+		{"CmdOrCtrl+Shift+Space", "windows", "Ctrl+Shift+Space"},
+		{"CmdOrCtrl+Shift+Space", "darwin", "⌘⇧Space"},
+		{"Ctrl+Alt+k", "darwin", "⌃⌥K"},
+		{"F8", "windows", "F8"},
+	}
+	for _, c := range cases {
+		if got := formatHotkey(c.acc, c.goos); got != c.want {
+			t.Errorf("formatHotkey(%q, %q) = %q, want %q", c.acc, c.goos, got, c.want)
+		}
 	}
 }

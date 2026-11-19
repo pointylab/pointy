@@ -142,10 +142,20 @@ type NoticeParagraph struct {
 	Copy []string `json:"copy,omitempty"`
 }
 
+// NoticeRecord puts a notice into shortcut-recording mode.
+type NoticeRecord struct {
+	Current      string  `json:"current,omitempty"`
+	Platform     string  `json:"platform"`
+	Placeholder  Message `json:"placeholder"`
+	NeedModifier Message `json:"needModifier"`
+	Unsupported  Message `json:"unsupported"`
+}
+
 type NoticeInit struct {
 	Title   Message           `json:"title"`
 	Body    []NoticeParagraph `json:"body"`
 	Buttons []NoticeButton    `json:"buttons,omitempty"`
+	Record  *NoticeRecord     `json:"record,omitempty"`
 }
 
 type IntroInit struct {

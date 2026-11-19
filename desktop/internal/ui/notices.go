@@ -49,12 +49,21 @@ func (u *UI) ShowNotice(init contract.NoticeInit, timeout time.Duration) (choice
 		n.win.OnClosed(func() { u.finishNotice(n, nil) })
 		// The page reports its height from an animation frame, which WebKit
 		// runs only for windows on screen.
-		n.win.OnReadyToShow(func() { show(n.win, kindNotice) })
+		n.win.OnReadyToShow(func() { n.show() })
 		if timeout > 0 {
 			n.timer = time.AfterFunc(timeout, func() { mygo.RunOnMain(func() { u.finishNotice(n, nil) }) })
 		}
 	})
 	return n.choice, func() { mygo.RunOnMain(func() { u.finishNotice(n, nil) }) }
+}
+
+func (n *notice) show() {
+	if n.init.Record != nil {
+		n.win.Show()
+		n.win.Focus()
+		return
+	}
+	show(n.win, kindNotice)
 }
 
 func (u *UI) finishNotice(n *notice, choice *string) {
@@ -96,7 +105,9 @@ func (u *UI) resizeNotice(n *notice, height int) {
 	wa := mygo.Screen.PrimaryDisplay().WorkArea
 	n.win.SetBounds(mygo.Rectangle{X: wa.X + wa.Width - noticeW - noticeMargin, Y: wa.Y + wa.Height - h - noticeMargin, Width: noticeW, Height: h})
 	if !n.win.IsVisible() {
-		show(n.win, kindNotice)
+		n.show()
+	} else if n.init.Record != nil {
+		n.win.Focus()
 	}
 }
 
@@ -236,5 +247,39 @@ func (u *UI) ShowExtensionGuide() {
 			{Text: i18n.Msg(i18n.GuideStep3)},
 		},
 		Buttons: []contract.NoticeButton{{ID: "ok", Label: i18n.Msg(i18n.GuideOK), Primary: true}},
+	})
+}
+
+func needModifierKey() i18n.Key {
+	if runtime.GOOS == "darwin" {
+		return i18n.HotkeyNeedModifierMac
+	}
+	return i18n.HotkeyNeedModifierWin
+}
+
+// ShowHotkeyRecorder opens a notice that records a global shortcut, pausing
+// the active shortcut until the window closes. Never call it on the main
+// thread.
+func (u *UI) ShowHotkeyRecorder() {
+	if u.deps.Hotkey != nil {
+		defer u.deps.Hotkey.Hold()()
+	}
+	u.ask(contract.NoticeInit{
+		Title: i18n.Msg(i18n.HotkeyRecordTitle),
+		Body: []contract.NoticeParagraph{
+			{Text: i18n.Msg(i18n.HotkeyRecordPrompt)},
+			{Text: i18n.Msg(i18n.HotkeyRecordNoResponse)},
+		},
+		Record: &contract.NoticeRecord{
+			Current:      formatHotkey(u.deps.Settings.Get().Hotkey, runtime.GOOS),
+			Platform:     runtime.GOOS,
+			Placeholder:  i18n.Msg(i18n.HotkeyRecordPlaceholder),
+			NeedModifier: i18n.Msg(needModifierKey()),
+			Unsupported:  i18n.Msg(i18n.HotkeyUnsupportedKey),
+		},
+		Buttons: []contract.NoticeButton{
+			{ID: "cancel", Label: i18n.Msg(i18n.HotkeyRecordCancel)},
+			{ID: "save", Label: i18n.Msg(i18n.HotkeyRecordSave), Primary: true},
+		},
 	})
 }

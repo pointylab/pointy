@@ -44,6 +44,10 @@
     "shakeLow": "低：要晃得明显",
     "shakeMedium": "中",
     "shakeHigh": "高：轻晃就行",
+    "hotkey": "快捷键",
+    "hotkeyOff": "关",
+    "hotkeyCustom": "自定义…",
+    "hotkeyTaken": "快捷键 {hotkey} 被其他程序占用",
     "guide": "使用说明…",
     "dnd": "勿扰模式",
     "autoArchive": "关闭卡片时归档会话",
@@ -118,5 +122,17 @@
     "step2": "2. 点「加载已解压的扩展程序」，把这个路径粘贴到选文件夹窗口的地址栏，再点「选择文件夹」。",
     "step3": "3. 装好后 Pointy 会弹窗问要不要让它连接，点「允许」就行。",
     "ok": "知道了"
+  },
+  "hotkey": {
+    "title": "设置快捷键",
+    "prompt": "按下想用的组合键，按 Esc 取消。",
+    "noResponse": "按了没反应，可能是被别的程序占用了。",
+    "placeholder": "等待按键…",
+    "needModifierWin": "至少要包含 Ctrl 或 Alt",
+    "needModifierMac": "至少要包含 ⌘、⌃ 或 ⌥",
+    "unsupported": "这个按键不能用作快捷键",
+    "taken": "这个组合被其他程序占用了，换一个",
+    "cancel": "取消",
+    "save": "保存"
   }
 }

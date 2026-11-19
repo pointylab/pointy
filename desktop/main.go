@@ -123,11 +123,33 @@ func start(home, root string, pages fs.FS, sys desktop.Desktop, logError func(st
 		Quit:            mygo.App.Quit,
 	})
 
+	picker := pick.New(pick.Deps{
+		Desktop:     sys,
+		Settings:    settings,
+		Fullscreen:  vis.Fullscreen,
+		Suppressed:  vis.Suppressed,
+		Browser:     exts,
+		OpenOverlay: func(b mygo.Rectangle) pick.Overlay { return windows.OpenOverlay(b) },
+		DisplayAt:   displayAt(sys),
+		Keys:        globalKeys(logError),
+		OpenGrab:    func(g contract.Grab, c pick.Card) { windows.OpenGrab(g, c) },
+		ShowHint:    windows.ShowHint,
+		CardFocused: windows.CardFocused,
+		Log:         logError,
+	})
+	hotkey := ui.NewHotkey(
+		settings,
+		func(acc string) error { return mygo.GlobalShortcut.Register(acc, func() { go picker.PickAtCursor() }) },
+		mygo.GlobalShortcut.Unregister,
+		logError,
+	)
+
 	err = windows.Start(ui.Deps{
 		Agent:         dsh,
 		AgentName:     agent.Name,
 		Desktop:       sys,
 		Visibility:    vis,
+		Hotkey:        hotkey,
 		Settings:      settings,
 		Pages:         pages,
 		Version:       installedVersion(root),
@@ -152,6 +174,8 @@ func start(home, root string, pages fs.FS, sys desktop.Desktop, logError func(st
 		logError("server", err)
 	}()
 
+	hotkey.Apply()
+
 	icon, err := os.ReadFile(filepath.Join(root, "assets", "tray@2x.png"))
 	if err != nil {
 		logError("tray", err)
@@ -163,14 +187,23 @@ func start(home, root string, pages fs.FS, sys desktop.Desktop, logError func(st
 		Extensions:         exts.Count,
 		ShowExtensionGuide: windows.ShowExtensionGuide,
 		ShowWelcome:        windows.ShowWelcome,
+		ShowHotkeyRecorder: windows.ShowHotkeyRecorder,
 		LocaleChanged:      func() { applyLocale(); tray.Update() },
+		HotkeyChanged:      hotkey.Apply,
+		HotkeyTaken:        hotkey.Taken,
 		Quit:               mygo.App.Quit,
 		Log:                logError,
 	}, icon)
 	if err != nil {
 		logError("tray", err)
 	}
-	vis.OnChange(func(bool) { tray.Update() })
+	hotkey.OnChange(func() { tray.Update() })
+	vis.OnChange(func(hidden bool) {
+		if hidden {
+			picker.Cancel()
+		}
+		tray.Update()
+	})
 
 	go func() {
 		for range time.Tick(fullscreenPoll) {
@@ -178,25 +211,6 @@ func start(home, root string, pages fs.FS, sys desktop.Desktop, logError func(st
 			vis.SetFullscreen(err == nil && on)
 		}
 	}()
-	picker := pick.New(pick.Deps{
-		Desktop:     sys,
-		Settings:    settings,
-		Fullscreen:  vis.Fullscreen,
-		Suppressed:  vis.Suppressed,
-		Browser:     exts,
-		OpenOverlay: func(b mygo.Rectangle) pick.Overlay { return windows.OpenOverlay(b) },
-		DisplayAt:   displayAt(sys),
-		Keys:        globalKeys(logError),
-		OpenGrab:    func(g contract.Grab, c pick.Card) { windows.OpenGrab(g, c) },
-		ShowHint:    windows.ShowHint,
-		CardFocused: windows.CardFocused,
-		Log:         logError,
-	})
-	vis.OnChange(func(hidden bool) {
-		if hidden {
-			picker.Cancel()
-		}
-	})
 	go picker.Watch(nil)
 	windows.GreetOnStart()
 	return dsh, picker

@@ -45,6 +45,10 @@
     "shakeLow": "Low: shake hard",
     "shakeMedium": "Medium",
     "shakeHigh": "High: a light shake will do",
+    "hotkey": "Keyboard Shortcut",
+    "hotkeyOff": "Off",
+    "hotkeyCustom": "Custom…",
+    "hotkeyTaken": "Shortcut {hotkey} is taken by another app",
     "guide": "How to Use…",
     "dnd": "Do Not Disturb",
     "autoArchive": "Archive the Session When a Card Closes",
@@ -119,5 +123,17 @@
     "step2": "2. Click “Load unpacked”, paste this path into the address bar of the folder window, then click “Select Folder”.",
     "step3": "3. Once it is installed, Pointy asks whether to let it connect. Click “Allow”.",
     "ok": "Got It"
+  },
+  "hotkey": {
+    "title": "Set a Keyboard Shortcut",
+    "prompt": "Press the keys you want to use. Press Esc to cancel.",
+    "noResponse": "If nothing shows up, another app may be using them.",
+    "placeholder": "Waiting for keys…",
+    "needModifierWin": "Include at least Ctrl or Alt",
+    "needModifierMac": "Include at least ⌘, ⌃ or ⌥",
+    "unsupported": "That key can't be used in a shortcut",
+    "taken": "That shortcut is taken by another app. Try another.",
+    "cancel": "Cancel",
+    "save": "Save"
   }
 }

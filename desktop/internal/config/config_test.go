@@ -75,6 +75,26 @@ func TestSettingsKeepDefaultsForMissingKeys(t *testing.T) {
 	}
 }
 
+func TestSettingsHotkey(t *testing.T) {
+	home := t.TempDir()
+	st := LoadSettings(home)
+	if got := st.Get().Hotkey; got != "" {
+		t.Fatalf("default hotkey %q, want empty", got)
+	}
+	if err := st.Update(func(s *Settings) { s.Hotkey = "CmdOrCtrl+Alt+P" }); err != nil {
+		t.Fatal(err)
+	}
+	if got := LoadSettings(home).Get().Hotkey; got != "CmdOrCtrl+Alt+P" {
+		t.Fatalf("saved hotkey %q, want CmdOrCtrl+Alt+P", got)
+	}
+	if err := st.Update(func(s *Settings) { s.Hotkey = "" }); err != nil {
+		t.Fatal(err)
+	}
+	if got := LoadSettings(home).Get().Hotkey; got != "" {
+		t.Fatalf("cleared hotkey %q, want empty", got)
+	}
+}
+
 func TestTokenIsStable(t *testing.T) {
 	home := t.TempDir()
 	a, err := Token(home)

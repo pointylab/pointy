@@ -101,6 +101,7 @@ type Deps struct {
 	AgentName  string
 	Desktop    desktop.Desktop
 	Visibility *Visibility
+	Hotkey     *Hotkey
 	Settings   *config.Store
 	// Pages is the frontend: the pages, and the bridge adapters in bridge/.
 	Pages fs.FS

@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/egoist/mygo"
@@ -8,6 +10,12 @@ import (
 	"github.com/pointylab/pointy/desktop/internal/config"
 	"github.com/pointylab/pointy/desktop/internal/i18n"
 )
+
+var presetHotkeys = []string{
+	"CmdOrCtrl+Alt+P",
+	"Alt+Shift+Space",
+	"CmdOrCtrl+Shift+Space",
+}
 
 // TrayDeps are what the menu bar icon shows and does.
 type TrayDeps struct {
@@ -17,10 +25,15 @@ type TrayDeps struct {
 	Extensions         func() int
 	ShowExtensionGuide func()
 	ShowWelcome        func()
+	ShowHotkeyRecorder func()
 	// LocaleChanged follows the language the user chose in Settings.
 	LocaleChanged func()
-	Quit          func()
-	Log           func(kind string, err any)
+	// HotkeyChanged rebinds the shortcut the user chose in Settings.
+	HotkeyChanged func()
+	// HotkeyTaken reports whether the shortcut in Settings failed to register.
+	HotkeyTaken func() bool
+	Quit        func()
+	Log         func(kind string, err any)
 }
 
 // Tray is the whale in the menu bar.
@@ -62,6 +75,9 @@ func trayContent(d TrayDeps) (string, []*mygo.MenuItem) {
 	if s.DND {
 		status = append(status, i18n.T(i18n.TrayDNDOn))
 	}
+	if s.Hotkey != "" && d.HotkeyTaken != nil && d.HotkeyTaken() {
+		status = append(status, i18n.T(i18n.TrayHotkeyTaken, "hotkey", formatHotkey(s.Hotkey, runtime.GOOS)))
+	}
 	if !st.Connected {
 		status = append(status, i18n.T(i18n.TrayAgentOffline, "agent", agent.Name))
 	}
@@ -91,6 +107,34 @@ func trayContent(d TrayDeps) (string, []*mygo.MenuItem) {
 			d.Visibility.Changed()
 		}})
 	}
+	// Binding a shortcut waits for the main thread, so it runs off it.
+	hotkeyChanged := func() {
+		if d.HotkeyChanged != nil {
+			go d.HotkeyChanged()
+		}
+	}
+	hotkey := []*mygo.MenuItem{{Label: i18n.T(i18n.TrayHotkeyOff), Type: mygo.MenuItemRadio, Checked: s.Hotkey == "", Click: func(*mygo.MenuItem, *mygo.Window) {
+		save(func(s *config.Settings) { s.Hotkey = "" })
+		hotkeyChanged()
+	}}}
+	hotkeys := slices.Clone(presetHotkeys)
+	if s.Hotkey != "" && !slices.ContainsFunc(hotkeys, func(p string) bool { return sameHotkey(p, s.Hotkey, runtime.GOOS) }) {
+		hotkeys = append(hotkeys, s.Hotkey)
+	}
+	for _, acc := range hotkeys {
+		hotkey = append(hotkey, &mygo.MenuItem{Label: formatHotkey(acc, runtime.GOOS), Type: mygo.MenuItemRadio, Checked: sameHotkey(s.Hotkey, acc, runtime.GOOS), Click: func(*mygo.MenuItem, *mygo.Window) {
+			save(func(s *config.Settings) { s.Hotkey = acc })
+			hotkeyChanged()
+		}})
+	}
+	hotkey = append(hotkey,
+		mygo.Separator(),
+		&mygo.MenuItem{Label: i18n.T(i18n.TrayHotkeyCustom), Click: func(*mygo.MenuItem, *mygo.Window) {
+			if d.ShowHotkeyRecorder != nil {
+				go d.ShowHotkeyRecorder()
+			}
+		}},
+	)
 	languages := []*mygo.MenuItem{{Label: i18n.T(i18n.LanguageSystem), Type: mygo.MenuItemRadio, Checked: s.Locale == "", Click: func(*mygo.MenuItem, *mygo.Window) {
 		save(func(s *config.Settings) { s.Locale = "" })
 		d.LocaleChanged()
@@ -107,6 +151,7 @@ func trayContent(d TrayDeps) (string, []*mygo.MenuItem) {
 	}
 	return tip, []*mygo.MenuItem{
 		{Label: i18n.T(i18n.TrayShake), Submenu: shake},
+		{Label: i18n.T(i18n.TrayHotkey), Submenu: hotkey},
 		extItem,
 		mygo.Separator(),
 		{Label: i18n.T(i18n.TrayGuide), Click: func(*mygo.MenuItem, *mygo.Window) { go d.ShowWelcome() }},
@@ -148,4 +193,57 @@ func (t *Tray) log(kind string, err any) {
 	if t.deps.Log != nil {
 		t.deps.Log(kind, err)
 	}
+}
+
+func sameHotkey(a, b, goos string) bool {
+	return a != "" && b != "" && (a == b || formatHotkey(a, goos) == formatHotkey(b, goos))
+}
+
+// formatHotkey spells an accelerator as menus on goos do.
+func formatHotkey(acc, goos string) string {
+	if acc == "" || acc == "+" {
+		return acc
+	}
+	parts := strings.Split(acc, "+")
+	if strings.HasSuffix(acc, "++") {
+		parts = append(parts[:len(parts)-2], "+")
+	}
+	key := strings.TrimSpace(parts[len(parts)-1])
+	if len([]rune(key)) == 1 {
+		key = strings.ToUpper(key)
+	}
+	mods := parts[:len(parts)-1]
+	if goos == "darwin" {
+		var b strings.Builder
+		for _, raw := range mods {
+			switch strings.ToLower(strings.TrimSpace(raw)) {
+			case "cmdorctrl", "commandorcontrol", "cmd", "command", "super", "meta":
+				b.WriteString("⌘")
+			case "ctrl", "control":
+				b.WriteString("⌃")
+			case "alt", "option", "altgr":
+				b.WriteString("⌥")
+			case "shift":
+				b.WriteString("⇧")
+			default:
+				b.WriteString(strings.TrimSpace(raw) + "+")
+			}
+		}
+		b.WriteString(key)
+		return b.String()
+	}
+	out := make([]string, 0, len(parts))
+	for _, raw := range mods {
+		m := strings.TrimSpace(raw)
+		switch strings.ToLower(m) {
+		case "cmdorctrl", "commandorcontrol", "ctrl", "control":
+			m = "Ctrl"
+		case "alt", "option":
+			m = "Alt"
+		case "shift":
+			m = "Shift"
+		}
+		out = append(out, m)
+	}
+	return strings.Join(append(out, key), "+")
 }
