@@ -5,15 +5,9 @@ on:
   # can only restore caches from its own branch and from main.
   push:
     branches: [main]
+  # Every pull request, with no path filter: main requires these checks
+  # before auto-merge, and a check that never runs never passes.
   pull_request:
-    paths:
-      - desktop/**
-      - app/**
-      - plugin/**
-      - tools/**
-      - assets/**
-      - package.json
-      - .github/workflows/desktop-test.yml
   workflow_call:
   workflow_dispatch:
 
