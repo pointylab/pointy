@@ -15,6 +15,9 @@ export default {
   bindings: '../app/bridge/mygo.ts',
   resources: ['../build'],
   macos: {
+    // An Icon Composer document, so macOS gives it the system's rounded
+    // shape and margin. Windows keeps plugin/icon.png.
+    icon: 'AppIcon.icon',
     signingIdentity: process.env.APPLE_SIGNING_IDENTITY || '-',
     notarize: notary ? { keychainProfile: notary, keychain: process.env.NOTARY_KEYCHAIN } : undefined,
     infoPlist: {

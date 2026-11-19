@@ -1,0 +1,15 @@
+{
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "pointy.png",
+          "name": "pointy"
+        }
+      ]
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}
