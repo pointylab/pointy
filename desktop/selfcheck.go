@@ -146,6 +146,28 @@ func within[T any](deadline time.Duration, call func(context.Context) (T, error)
 	return v, time.Since(start), err
 }
 
+const (
+	// pageReadyWait is how long a test window's first page may take. The
+	// first web view of a run starts WebView2, which on a fresh CI runner
+	// has taken longer than 5s.
+	pageReadyWait = 30 * time.Second
+	// paintWait is how long a shown window may take to reach the screen.
+	paintWait = 5 * time.Second
+)
+
+// screenUntil copies area from the screen until ok holds or paintWait
+// passes, and returns the last copy.
+func screenUntil(drv selfDriver, area desktop.Rect, ok func(image.Image) bool) (image.Image, error) {
+	deadline := time.Now().Add(paintWait)
+	for {
+		time.Sleep(200 * time.Millisecond)
+		img, err := drv.screen(area)
+		if err != nil || ok(img) || time.Now().After(deadline) {
+			return img, err
+		}
+	}
+}
+
 func runChecks(r *report, d desktop.Desktop, drv selfDriver) {
 	r.info("build", "%s/%s %s", runtime.GOOS, runtime.GOARCH, runtime.Version())
 	if drv != nil {
@@ -268,11 +290,13 @@ func checkWindow(r *report, d desktop.Desktop, drv selfDriver, fg desktop.Foregr
 	r.noErr("SetFocusable false", d.SetFocusable(w, false))
 	id := d.WindowID(w)
 	r.check("WindowID", id != 0, "%#x", uint64(id))
+	loaded := time.Now()
 	w.Page().LoadHTML(testPage, "")
 	select {
 	case <-ready:
-	case <-time.After(5 * time.Second):
-		r.info("OnReadyToShow", "did not fire within 5s; showing anyway")
+		r.info("OnReadyToShow", "after %dms", time.Since(loaded).Milliseconds())
+	case <-time.After(pageReadyWait):
+		r.info("OnReadyToShow", "did not fire within %s; showing anyway", pageReadyWait)
 	}
 
 	mygo.RunOnMain(w.ShowInactive)
@@ -314,8 +338,9 @@ func checkWindowPixels(r *report, d desktop.Desktop, drv selfDriver, w *mygo.Win
 	r.savePNG("window-captured.png", behind)
 	mid := behind.At(behind.Bounds().Dx()/2, behind.Bounds().Dy()/2)
 	r.check("Capture leaves Pointy's windows out", !near(mid, testBlue, 24), "center %v, the window paints %v", mid, testBlue)
-	time.Sleep(200 * time.Millisecond)
-	shown, err := drv.screen(area)
+	shown, err := screenUntil(drv, area, func(img image.Image) bool {
+		return near(img.At(img.Bounds().Dx()/2, img.Bounds().Dy()/2), testBlue, 24)
+	})
 	if !r.noErr("screen with the window shown", err) {
 		return area
 	}

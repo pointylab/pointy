@@ -167,7 +167,7 @@ func checkPick(r *report, d desktop.Desktop, drv selfDriver, fg desktop.Foregrou
 	}
 	r.check("pick starts pointing", true, "an overlay covers the display")
 	time.Sleep(pickPointing)
-	if shot, err := drv.screen(desktop.Rect{int(p.X) - 4, int(p.Y) - 4, 8, 8}); err == nil {
+	if shot, err := screenUntil(drv, desktop.Rect{int(p.X) - 4, int(p.Y) - 4, 8, 8}, func(img image.Image) bool { return markPixels(img) > 0 }); err == nil {
 		r.check("the overlay shows above the target", markPixels(shot) > 0, "center %v", shot.At(4, 4))
 	}
 	r.check("pointing draws the control under the mouse", o.highlights.Load() > 0, "%d highlights", o.highlights.Load())
