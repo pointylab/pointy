@@ -49,8 +49,9 @@ expect "the card takes DSH's title" logged 'card title: Mock 标题' 3
 expect "the model got the question and the paragraph" mock_got $QUESTION "$PARAGRAPH"
 
 # 3. Closing a card mid-task keeps it as a pill, which turns done and opens the card again.
-# The first card goes first, so the next pick has to open a card of its own.
-js $cw "document.getElementById('close').click(); return 'closed'" > /dev/null
+# The first card goes first, so the next pick has to open a card of its own;
+# the click waits until eval has returned, as it closes the window.
+js $cw "setTimeout(() => document.getElementById('close').click()); return 'closed'" > /dev/null
 until_true 5 no_card || log "(the first card stayed open)"
 cw=$(zsh $S/pick.sh kept) || cw=
 [ -n "$cw" ] || { log "FAIL a second pick opens a card"; (( failed++ )); exit 1; }

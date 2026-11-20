@@ -70,8 +70,9 @@ try {
     Expect 'the model got the question and the paragraph' { Mock-Got @($question, $paragraph) }
 
     # 3. Closing a card mid-task keeps it as a pill, which turns done and opens the card again.
-    # The first card goes first, so the next pick has to open a card of its own.
-    Js $cw 'document.getElementById("close").click(); return "closed"' | Out-Null
+    # The first card goes first, so the next pick has to open a card of its own;
+    # the click waits until eval has returned, as it closes the window.
+    Js $cw 'setTimeout(() => document.getElementById("close").click()); return "closed"' | Out-Null
     $end = (Get-Date).AddSeconds(5)
     while ((Has-Page 'card.html') -and (Get-Date) -lt $end) { Start-Sleep -Milliseconds 200 }
     if (Has-Page 'card.html') { Log '(the first card stayed open)' }
