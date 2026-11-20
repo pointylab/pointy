@@ -6,8 +6,11 @@
 # per check; evidence stays in $VP_RUN/evidence.
 set -u
 S=${0:A:h:h}/scripts
-export VP_REPO=${1:-} VP_SOLO=1
+export VP_REPO=${1:-${VP_REPO:-}} VP_SOLO=1
 keep=${2:-}
+src=${${VP_REPO:-${0:A:h:h:h:h:h}}:A}
+python3 -c 'import json,sys; sys.exit(0 if "hotkey" in json.load(open(sys.argv[1]))["tray"] else 1)' $src/locales/zh-CN.json \
+  || { print "SKIP: this checkout has no keyboard shortcut (no tray.hotkey text)"; exit 0; }
 up=$(zsh $S/up.sh zh-CN) || exit 1
 export VP_RUN=${${up##*export VP_RUN=}%%$'\n'*}
 source $S/env.sh

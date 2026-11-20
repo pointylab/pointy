@@ -6,6 +6,9 @@
 param([string]$Repo = '', [switch]$Keep)
 $ErrorActionPreference = 'Stop'
 $s = Join-Path $PSScriptRoot '..\scripts\win'
+$src = if ($Repo) { $Repo } elseif ($env:VP_REPO) { $env:VP_REPO } else { (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path }
+$t = (Get-Content -Raw (Join-Path $src 'locales\zh-CN.json') | ConvertFrom-Json).tray
+if (-not $t.PSObject.Properties['hotkey']) { 'SKIP: this checkout has no keyboard shortcut (no tray.hotkey text)'; exit 0 }
 $up = & (Join-Path $s 'up.ps1') -Locale zh-CN -Repo $Repo
 $env:VP_RUN = ($up | Select-Object -Last 1) -replace '^VP_RUN=', ''
 . (Join-Path $s 'env.ps1')
@@ -21,7 +24,6 @@ function Tray { & (Join-Path $s 'tray.ps1') @args }
 function Keys { & (Join-Path $s 'keys.ps1') @args }
 function Overlay-Up { Has-Page 'overlay.html' }
 
-$t = (Get-Content -Raw (Join-Path $(if ($Repo) { $Repo } else { $ToolRepo }) 'locales\zh-CN.json') | ConvertFrom-Json).tray
 $pointy = Get-RunPid pointy
 try {
   # 1. A preset from the tray is saved and bound.

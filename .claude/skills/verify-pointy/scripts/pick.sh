@@ -9,7 +9,7 @@ doc=$VP_RUN/fixture-$name.txt
 cp "$SKILL/fixture.txt" "$doc"
 # One fixture at a time: TextEdit would open the next as a tab of this one.
 for old in $(cat "$VP_RUN/fixtures" 2>/dev/null); do
-  osascript -e "tell application \"TextEdit\" to close (every document whose path is \"$old\") saving no" > /dev/null 2>&1
+  close_doc "$old"
 done
 print -r -- "${doc:A}" >> "$VP_RUN/fixtures"
 # Opening activates TextEdit, so it waits for an idle user like the mouse does.

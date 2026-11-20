@@ -12,7 +12,7 @@ for p in dsh pointy mock; do
   for q in $all; do kill -0 $q 2>/dev/null && kill -9 $q && log "killed -9 $p $q"; done
 done
 for doc in $(cat "$VP_RUN/fixtures" 2>/dev/null); do
-  osascript -e "tell application \"TextEdit\" to close (every document whose path is \"$doc\") saving no" > /dev/null 2>&1
+  close_doc "$doc"
 done
 pa close > /dev/null 2>&1
 for f in settings.json error.log; do cp "$VP_RUN/home/.pointy/$f" "$EV/pointy-$f" 2> /dev/null; done

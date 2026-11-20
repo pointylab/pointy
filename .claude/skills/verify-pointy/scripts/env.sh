@@ -48,7 +48,7 @@ guard() {
 }
 
 # mine <x> <y> <pid>...: aborts unless the top window at x,y belongs to one of the pids.
-mine() { local x=$1 y=$2 o; shift 2; o=$(drive at $x $y); (( ${@[(Ie)$o]} )) || die "the window at $x,$y is pid $o's, not $*'s; not touching it"; }
+mine() { local x=$1 y=$2 o; shift 2; o=$(drive at $x $y); (( ${@[(Ie)$o]} )) || die "the window at $x,$y is pid $o's ($(ps -p $o -o comm= 2> /dev/null)), not $*'s; not touching it"; }
 
 # wait_until <seconds> <what> <command...>: polls the command until it succeeds.
 wait_until() {
@@ -57,6 +57,11 @@ wait_until() {
   while (( SECONDS < end )); do "$@" > /dev/null 2>&1 && return 0; sleep 0.2; done
   die "timed out after ${secs}s waiting for $what"
 }
+
+# close_doc <path>: closes the TextEdit window showing that document by its
+# close button, through System Events, so TextEdit itself needs no
+# Automation permission. The run's documents are never edited.
+close_doc() { osascript -e "tell application \"System Events\" to tell process \"TextEdit\" to click (first button of window \"${1:t}\" whose subrole is \"AXCloseButton\")" > /dev/null 2>&1; }
 
 # shot_page <page> <name>: saves the newest window showing the page as
 # WebKit draws it, which needs no Screen Recording.

@@ -331,7 +331,9 @@ func nsString(s string) objc.ID {
 }
 
 // ownerAt is the pid of the frontmost on-screen window holding p, other
-// than skip's.
+// than skip's. Dock's windows that span a whole display are skipped: some
+// Macs have them above every app, and clicks pass through them outside the
+// Dock itself.
 func ownerAt(p point, skip int) int {
 	list := objc.ID(windowList(1|16, 0))
 	if list == 0 {
@@ -347,11 +349,28 @@ func ownerAt(p point, skip int) int {
 		if pid == skip || objc.Send[float64](get(d, "kCGWindowAlpha"), sel("doubleValue")) == 0 {
 			continue
 		}
+		if goString(get(d, "kCGWindowOwnerName")) == "Dock" && isDisplay(f("X"), f("Y"), f("Width"), f("Height")) {
+			continue
+		}
 		if p.X >= f("X") && p.Y >= f("Y") && p.X < f("X")+f("Width") && p.Y < f("Y")+f("Height") {
 			return pid
 		}
 	}
 	return 0
+}
+
+// isDisplay is whether the rect is exactly one display's bounds.
+func isDisplay(x, y, w, h float64) bool {
+	var ids [8]uint32
+	var n uint32
+	activeDisplays(8, &ids[0], &n)
+	for _, id := range ids[:n] {
+		b := displayBounds(id)
+		if b.Origin.X == x && b.Origin.Y == y && b.Size.W == w && b.Size.H == h {
+			return true
+		}
+	}
+	return false
 }
 
 type windowInfo struct {

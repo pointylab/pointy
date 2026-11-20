@@ -148,6 +148,8 @@ The macOS half has the same scenario, run from Terminal or over SSH once the ter
 zsh .claude/skills/verify-pointy/scenarios/hotkey.sh [<checkout>] [keep]
 ```
 
+A scenario prints `SKIP` and exits 0 when the checkout lacks its feature. The Verify workflow (`.github/workflows/verify.yml`) runs every scenario on `windows-latest` and `macos-latest` for each pull request, with `VP_IDLE=0` since nobody uses a runner, and uploads the evidence. Run it by hand with a `ref` to test another branch with the current scenarios. Both runners grant Accessibility and Screen Recording.
+
 ## Feature map
 
 `features/README.md` lists what to drive and how to tell that it worked. Before you call a change verified, cover every entry point the map lists for the feature you touched.
