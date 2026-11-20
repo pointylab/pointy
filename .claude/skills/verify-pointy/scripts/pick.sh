@@ -19,6 +19,8 @@ te=$(pgrep -nx TextEdit)
 wait_until 10 "the fixture window" osascript -e "tell application \"System Events\" to tell process \"TextEdit\" to get position of window \"${doc:t}\""
 IFS=', ' read wx wy ww wh <<< "$(osascript -e "tell application \"System Events\" to tell process \"TextEdit\" to get {position, size} of window \"${doc:t}\"")"
 X=$(( wx + 200 )) Y=$(( wy + 50 ))
+# TextEdit lists the window before it comes to the front.
+wait_until 5 "the fixture window on top" sh -c "[ \"\$($BIN/drive at $X $Y)\" = $te ]"
 
 for x in $(( X - 70 )) $X $(( X + 70 )); do mine $x $Y $te; done
 # The screenshot shows only the fixture's rect, and only when no other app's

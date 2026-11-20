@@ -1,6 +1,6 @@
 ---
 name: verify-pointy
-description: Drive the Go (mygo) build of Pointy the way a user does and capture screenshots and logs as proof, on macOS against an isolated DSH with a mock model, and on Windows with Pointy alone. Use to verify any change to the desktop runtime, the pages (card, pill, notices, overlay), the plugin, or the language of Pointy's texts before calling it done.
+description: Drive the Go (mygo) build of Pointy the way a user does and capture screenshots and logs as proof, on macOS against an isolated DSH with a mock model, and on Windows alone or against the same DSH and mock. Use to verify any change to the desktop runtime, the pages (card, pill, notices, overlay), the plugin, or the language of Pointy's texts before calling it done.
 ---
 
 # verify-pointy
@@ -95,18 +95,20 @@ Kills the recorded PIDs and their children and closes the fixture documents the 
 
 ## Windows
 
-`scripts/win/` holds the Windows half: PowerShell 7 scripts and the Windows build of `desktop/cmd/drive`. It starts the e2e build of Pointy alone, without DSH or the mock model, so it covers what Pointy does by itself: the tray, the pointing overlay, notices and Settings. Run the scripts with `pwsh -NoProfile -File`. They need Go and Node on PATH, a desktop session that is unlocked, and port 47397 free.
+`scripts/win/` holds the Windows half: PowerShell 7 scripts and the Windows build of `desktop/cmd/drive`. By default it starts the e2e build of Pointy alone, for what Pointy does by itself (the tray, the pointing overlay, notices and Settings); pass `-Dsh` to start DSH and the mock model too. Run the scripts with `pwsh -NoProfile -File`. They need Go and Node on PATH, a desktop session that is unlocked, and port 47397 free; `-Dsh` also needs `dsh` (`dsh.cmd` on PATH, or `$env:DSH`) and `pnpm` on PATH, and ports 47398 and 3093 free.
 
 ```powershell
-pwsh -NoProfile -File .claude/skills/verify-pointy/scripts/win/up.ps1 -Locale zh-CN   # -Repo <checkout> builds another checkout
+pwsh -NoProfile -File .claude/skills/verify-pointy/scripts/win/up.ps1 -Locale zh-CN [-Dsh]   # -Repo <checkout> builds another checkout
 pwsh -NoProfile -File .claude/skills/verify-pointy/scripts/win/doctor.ps1
 pwsh -NoProfile -File .claude/skills/verify-pointy/scripts/win/down.ps1
 ```
 
-`up.ps1` makes a run directory under `%TEMP%\verify-pointy\` and records it in `%TEMP%\verify-pointy\current`, so every later script, each in a fresh shell, finds the run without `VP_RUN`. It builds the pages, the e2e Pointy and `mygo-automation` from the checkout (`-Repo`, default this one) and `drive` from this checkout, so an older branch can be tested with the current tools. It then seeds `settings.json` as the macOS half does and starts Pointy with `POINTY_HOME`, `POINTY_PORT=47397`, `POINTY_ROOT` and `MYGO_AUTOMATION` set. `down.ps1` stops the recorded processes with their WebView2 children, copies Pointy's `settings.json` and logs into the evidence, and deletes the rest.
+`up.ps1` makes a run directory under `%TEMP%\verify-pointy\` and records it in `%TEMP%\verify-pointy\current`, so every later script, each in a fresh shell, finds the run without `VP_RUN`. It builds the pages, the e2e Pointy and `mygo-automation` from the checkout (`-Repo`, default this one) and `drive` from this checkout, so an older branch can be tested with the current tools. It then seeds `settings.json` as the macOS half does and starts Pointy with `POINTY_HOME`, `POINTY_PORT=47397`, `POINTY_ROOT` and `MYGO_AUTOMATION` set; with `-Dsh`, it packs and installs the plugin into a scratch `DSH_HOME` with `USERPROFILE` at `$VP_RUN\home`, starts the mock model on 47398 and DSH on 3093, and waits for `dsh-ui` to connect. `down.ps1` stops the recorded processes with their child processes, copies Pointy's `settings.json` and logs into the evidence, and deletes the rest.
 
 | Script | Does |
 | --- | --- |
+| `pick.ps1 <name>` | Opens the run's fixture window, shakes over it, clicks its first paragraph, and prints the card's window id. |
+| `ask.ps1 <card> <name> <question> [-Keep]` | Asks in full mode through the card page and logs every progress line. With `-Keep`, closes the card mid-task and follows the pill to done. |
 | `tray.ps1 <name> [item [subitem]]` | Opens the tray menu as a right click on the icon does, logs its items with their check marks, saves `<name>-tray.png`, then clicks `item` > `subitem`. With an item that has a submenu and no subitem, it opens the submenu, lists and shows it, and closes the menu. |
 | `keys.ps1 <combo> [-To pointy\|fixture\|both]` | Presses a key combination such as `Ctrl+Alt+K` or `Esc` with real input, only while the foreground window is Pointy's (or the fixture's). |
 | `fixture.ps1` | Opens the run's own window with `fixture.txt` in a text box, brings it to the front and prints its HWND and bounds. Notepad is no fixture on Windows 11: it opens files as tabs of a window the user may own. |
@@ -137,18 +139,20 @@ Pa eval --window $e "return window.mygo.call('E2E.ChooseTray', ['Do Not Disturb'
 `scenarios/` holds whole runs that go from `up` to `down` in one command and print `PASS`/`FAIL` per check, for example:
 
 ```powershell
+pwsh -NoProfile -File .claude/skills/verify-pointy/scenarios/ask.ps1 [-Repo <checkout>] [-Keep]
 pwsh -NoProfile -File .claude/skills/verify-pointy/scenarios/hotkey.ps1 [-Repo <checkout>] [-Keep]
 ```
 
-`-Keep` leaves the run up for a look; run `down.ps1` after.
+`ask.ps1` drives the full flow against DSH and the mock model (pick, ask in full mode, keep as a pill and restore) and prints `SKIP` when `dsh` is not installed. `-Keep` leaves the run up for a look; run `down.ps1` after.
 
-The macOS half has the same scenario, run from Terminal or over SSH once the terminal (or `sshd-keygen-wrapper`) has Accessibility:
+The macOS half has the same scenarios (`ask.sh`, `hotkey.sh`), run from Terminal or over SSH once the terminal (or `sshd-keygen-wrapper`) has Accessibility:
 
 ```sh
+zsh .claude/skills/verify-pointy/scenarios/ask.sh [<checkout>] [keep]
 zsh .claude/skills/verify-pointy/scenarios/hotkey.sh [<checkout>] [keep]
 ```
 
-A scenario prints `SKIP` and exits 0 when the checkout lacks its feature. The Verify workflow (`.github/workflows/verify.yml`) runs every scenario on `windows-latest` and `macos-latest` for each pull request, with `VP_IDLE=0` since nobody uses a runner, and uploads the evidence. Run it by hand with a `ref` to test another branch with the current scenarios. Both runners grant Accessibility and Screen Recording.
+A scenario prints `SKIP` and exits 0 when the checkout lacks its feature. The Verify workflow (`.github/workflows/verify.yml`) runs every scenario on `windows-latest` and `macos-latest` for each pull request, with `VP_IDLE=0` since nobody uses a runner, installs the latest DSH (cached under the key Desktop test uses) for `ask`, and uploads the evidence. Run it by hand with a `ref` to test another branch with the current scenarios. Both runners grant Accessibility and Screen Recording.
 
 ## Feature map
 

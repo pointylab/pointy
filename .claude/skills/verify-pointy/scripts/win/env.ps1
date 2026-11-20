@@ -9,6 +9,8 @@ $Skill = Split-Path (Split-Path $PSScriptRoot)
 $ToolRepo = (Resolve-Path (Join-Path $Skill '..\..\..')).Path
 $Runs = Join-Path ([IO.Path]::GetTempPath()) 'verify-pointy'
 $PointyPort = 47397
+$MockPort = 47398
+$DshPort = 3093
 $EV = $null
 if (-not (Get-Variable NoRun -ErrorAction SilentlyContinue)) { $NoRun = $false }
 
@@ -21,7 +23,10 @@ if (-not $NoRun) {
   $Bin = Join-Path $VP_RUN 'bin'
   $EV = Join-Path $VP_RUN 'evidence'
   $Sock = Join-Path $VP_RUN 'a.sock'
-  $PointyHome = Join-Path $VP_RUN 'home'
+  $HomeDir = Join-Path $VP_RUN 'home'
+  $PointyHome = Join-Path $HomeDir '.pointy'
+  $DshHome = Join-Path $VP_RUN 'dsh-home'
+  $WithDsh = Test-Path (Join-Path $VP_RUN 'dsh')
   $SettingsFile = Join-Path $PointyHome 'settings.json'
   $env:MYGO_AUTOMATION_SESSION = 'verify-pointy-' + (Split-Path -Leaf $VP_RUN)
   # drive records its own input here, so guard does not take it for the user's.
@@ -37,6 +42,11 @@ function Die([string]$msg) { Log "FAIL: $msg"; throw $msg }
 function Get-RunPid([string]$name) {
   $f = Join-Path $VP_RUN "pids\$name"
   if (Test-Path $f) { [int](Get-Content -Raw $f).Trim() }
+}
+# Get-Tree <pid>: the pid and every process under it.
+function Get-Tree([int]$root) {
+  $root
+  Get-CimInstance Win32_Process -Filter "ParentProcessId=$root" | ForEach-Object { Get-Tree $_.ProcessId }
 }
 
 # Drive runs bin\drive.exe and fails on a non-zero exit, unless -Soft.

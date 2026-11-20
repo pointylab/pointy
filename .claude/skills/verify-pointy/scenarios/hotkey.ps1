@@ -41,7 +41,7 @@ try {
   Keys 'Ctrl+Alt+P' -To fixture
   Expect 'Ctrl+Alt+P starts pointing' { Wait-Until 5 'the pointing overlay' { Overlay-Up }; $true }
   Start-Sleep -Milliseconds 600
-  Drive shot ($fx.X - 20) ($fx.Y - 20) ($fx.W + 40) ($fx.H + 40) (Join-Path $EV 'preset-pointing.png') | Out-Null
+  Drive shotwin $fx.HWND (Join-Path $EV 'preset-pointing.png') -8 | Out-Null
   Keys 'Esc' -To both
   Expect 'Esc ends pointing' { Wait-Until 5 'the overlay to close' { -not (Overlay-Up) }; $true }
 

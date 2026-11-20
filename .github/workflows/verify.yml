@@ -1,9 +1,10 @@
 name: Verify
 
 # Runs the verify-pointy scenarios (.claude/skills/verify-pointy/scenarios)
-# against the real app on each platform and keeps their screenshots. A
-# scenario prints SKIP when the checkout lacks its feature. Not required
-# for merging while the scenarios settle.
+# against the real app on each platform, with DSH and a mock model where a
+# scenario asks, and keeps their screenshots. A scenario prints SKIP when
+# the checkout lacks its feature. Not required for merging while the
+# scenarios settle.
 on:
   pull_request:
   workflow_dispatch:
@@ -43,6 +44,38 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 24
+      # The ask scenario runs against a real DSH. Its install is cached under
+      # the key Desktop test uses, so a run on main fills it for both.
+      - name: Resolve the latest DSH
+        shell: bash
+        run: |
+          version=$(npm view '@deepseek-ai/dsh@latest' version)
+          [ -n "$version" ] || { echo '::error::could not read the latest DSH version from npm'; exit 1; }
+          echo "DSH_VERSION=$version" >> "$GITHUB_ENV"
+      - name: Restore DSH
+        id: dsh-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/dsh/node_modules
+            ${{ runner.temp }}/dsh/package.json
+            ${{ runner.temp }}/dsh/package-lock.json
+          key: dsh-${{ env.DSH_VERSION }}-${{ runner.os }}-${{ runner.arch }}-node24
+      - name: Install DSH
+        if: steps.dsh-cache.outputs.cache-hit != 'true'
+        shell: bash
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir -p dsh && cd dsh
+          npm init -y > /dev/null
+          npm i "@deepseek-ai/dsh@$DSH_VERSION" --no-fund --no-audit
+      # DSH installs plugins with pnpm.
+      - name: Put DSH and pnpm on hand
+        shell: bash
+        run: |
+          npm i -g pnpm@10 --no-fund --no-audit
+          bin="$RUNNER_TEMP/dsh/node_modules/.bin"
+          if [ "$RUNNER_OS" = Windows ]; then echo "DSH=$(cygpath -w "$bin")\\dsh.cmd"; else echo "DSH=$bin/dsh"; fi >> "$GITHUB_ENV"
       - name: Scenarios
         run: |
           # Puts the run directories where the upload step finds them.
@@ -80,6 +113,38 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 24
+      # The ask scenario runs against a real DSH. Its install is cached under
+      # the key Desktop test uses, so a run on main fills it for both.
+      - name: Resolve the latest DSH
+        shell: bash
+        run: |
+          version=$(npm view '@deepseek-ai/dsh@latest' version)
+          [ -n "$version" ] || { echo '::error::could not read the latest DSH version from npm'; exit 1; }
+          echo "DSH_VERSION=$version" >> "$GITHUB_ENV"
+      - name: Restore DSH
+        id: dsh-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/dsh/node_modules
+            ${{ runner.temp }}/dsh/package.json
+            ${{ runner.temp }}/dsh/package-lock.json
+          key: dsh-${{ env.DSH_VERSION }}-${{ runner.os }}-${{ runner.arch }}-node24
+      - name: Install DSH
+        if: steps.dsh-cache.outputs.cache-hit != 'true'
+        shell: bash
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir -p dsh && cd dsh
+          npm init -y > /dev/null
+          npm i "@deepseek-ai/dsh@$DSH_VERSION" --no-fund --no-audit
+      # DSH installs plugins with pnpm.
+      - name: Put DSH and pnpm on hand
+        shell: bash
+        run: |
+          npm i -g pnpm@10 --no-fund --no-audit
+          bin="$RUNNER_TEMP/dsh/node_modules/.bin"
+          if [ "$RUNNER_OS" = Windows ]; then echo "DSH=$(cygpath -w "$bin")\\dsh.cmd"; else echo "DSH=$bin/dsh"; fi >> "$GITHUB_ENV"
       # The scenarios read the menu bar through accessibility, post real
       # input and take screenshots, which need Accessibility and Screen
       # Recording for this job's processes.
