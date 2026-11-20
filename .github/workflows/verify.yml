@@ -1,0 +1,111 @@
+name: Verify
+
+# Runs the verify-pointy scenarios (.claude/skills/verify-pointy/scenarios)
+# against the real app on each platform and keeps their screenshots. A
+# scenario prints SKIP when the checkout lacks its feature. Not required
+# for merging while the scenarios settle.
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or commit to build and test; the scenarios come from the workflow's own ref
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  TARGET_REF: ${{ inputs.ref }}
+  # Runners are disposable and nobody uses them, so the scenarios need not
+  # wait for an idle user.
+  VP_IDLE: '0'
+  VP_WAIT: '60'
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+        if: env.TARGET_REF
+        with:
+          ref: ${{ env.TARGET_REF }}
+          path: target
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: desktop/go.mod
+          cache-dependency-path: desktop/go.sum
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Scenarios
+        run: |
+          # Puts the run directories where the upload step finds them.
+          $env:TEMP = $env:TMP = $env:RUNNER_TEMP
+          if ($env:TARGET_REF) { $env:VP_REPO = (Resolve-Path target).Path }
+          $failed = @()
+          foreach ($s in Get-ChildItem .claude/skills/verify-pointy/scenarios/*.ps1) {
+            Write-Host "::group::$($s.BaseName)"
+            pwsh -NoProfile -File $s.FullName
+            if ($LASTEXITCODE) { $failed += $s.BaseName }
+            Write-Host '::endgroup::'
+          }
+          if ($failed) { Write-Host "::error::failed: $($failed -join ', ')"; exit 1 }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verify-windows
+          path: ${{ runner.temp }}/verify-pointy/*/evidence/
+          if-no-files-found: ignore
+
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+        if: env.TARGET_REF
+        with:
+          ref: ${{ env.TARGET_REF }}
+          path: target
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: desktop/go.mod
+          cache-dependency-path: desktop/go.sum
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      # The scenarios read the menu bar through accessibility, post real
+      # input and take screenshots, which need Accessibility and Screen
+      # Recording for this job's processes.
+      - name: Permissions
+        run: |
+          cd desktop && go build -o "$RUNNER_TEMP/drive" ./cmd/drive
+          "$RUNNER_TEMP/drive" chain 100 10
+          screencapture -x -R 0,0,200,40 "$RUNNER_TEMP/probe.png" && echo "screen capture works"
+          "$RUNNER_TEMP/drive" chain 100 10 | grep -q '"chain":\[{' || { echo "::error::no Accessibility for this job"; exit 1; }
+      - name: Scenarios
+        run: |
+          [ -n "$TARGET_REF" ] && export VP_REPO=$PWD/target
+          failed=()
+          for s in .claude/skills/verify-pointy/scenarios/*.sh; do
+            echo "::group::${s:t:r}"
+            # The whole screen, to show what got in the way; runners show nobody's windows.
+            zsh "$s" || { failed+=(${s:t:r}); screencapture -x /private/tmp/verify-pointy-${s:t:r}-screen.png; }
+            echo "::endgroup::"
+          done
+          (( ${#failed} == 0 )) || { echo "::error::failed: $failed"; exit 1; }
+        shell: zsh {0}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verify-macos
+          path: |
+            /private/tmp/verify-pointy.*/evidence/
+            /private/tmp/verify-pointy-*-screen.png
+          if-no-files-found: ignore
