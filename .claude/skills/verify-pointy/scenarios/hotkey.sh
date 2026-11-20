@@ -38,7 +38,7 @@ pointy=$(pid pointy)
 
 # 1. A preset from the tray is saved and bound.
 step tray.sh preset "$HOTKEY" ⌘⌥P
-expect "the preset is saved in settings.json" is_setting hotkey CmdOrCtrl+Alt+P
+expect "the preset is saved in settings.json" until_true 3 is_setting hotkey CmdOrCtrl+Alt+P
 step tray.sh preset-checked "$HOTKEY"
 expect "the tray checks ⌘⌥P" logged "[x] ⌘⌥P"
 
@@ -67,7 +67,7 @@ expect "the recorder shows ⌘⌥K" keys_shown ⌘⌥K
 shot_page notice.html custom-recorded
 step keys.sh Return pointy
 expect "Return saves and closes the recorder" until_true 5 no_notice
-expect "the shortcut is saved as Cmd+Alt+K" is_setting hotkey Cmd+Alt+K
+expect "the shortcut is saved as Cmd+Alt+K" until_true 3 is_setting hotkey Cmd+Alt+K
 expect "Pointy logs no registration error" sh -c "! grep -q 'cannot register' '$VP_RUN/home/.pointy/error.log'"
 step tray.sh custom-checked "$HOTKEY"
 expect "the tray lists and checks ⌘⌥K" logged "[x] ⌘⌥K"

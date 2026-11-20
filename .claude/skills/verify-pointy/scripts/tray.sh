@@ -27,13 +27,15 @@ for y in range(int(w["Y"]) + 3, int(w["Y"] + w["H"]) - 2, 3):
     seen = item["name"]
 ' "$1" "$BIN/drive"
 }
-# marks: the open menus' items as "[x] name" or "[ ] name", a blank line between menus.
+# marks [item]: the menu's items, or the item's submenu's, as "[x] name" or "[ ] name".
 marks() {
   drive menus $p | python3 -c 'import json,sys
-print("\n\n".join("\n".join(("[x] " if i.get("Checked") else "[ ] ") + i["Name"] for i in m if i["Name"]) for m in json.load(sys.stdin) or []))'
+m = json.load(sys.stdin) or []
+if len(sys.argv) > 1: m = next((i.get("Items") or [] for i in m if i["Name"] == sys.argv[1]), [])
+print("\n".join(("[x] " if i.get("Checked") else "[ ] ") + i["Name"] for i in m if i["Name"]))' "$@"
 }
-# has_submenu <item>: whether an open menu's item of that name has a submenu.
-has_submenu() { drive menus $p | python3 -c 'import json,sys; sys.exit(0 if any(i["Name"] == sys.argv[1] and i.get("Submenu") for m in json.load(sys.stdin) or [] for i in m) else 1)' "$1"; }
+# has_submenu <item>: whether the menu's item of that name has a submenu.
+has_submenu() { drive menus $p | python3 -c 'import json,sys; sys.exit(0 if any(i["Name"] == sys.argv[1] and i.get("Items") for i in json.load(sys.stdin) or []) else 1)' "$1"; }
 menus() { windows | python3 -c 'import json,sys; [print(json.dumps(w)) for w in json.load(sys.stdin) if w["Layer"] == 101]'; }
 
 # The icon sits in a window of Control Center's; accessibility says it is ours.
@@ -64,7 +66,7 @@ wait_until 5 "the submenu" sh -c "[ \$($BIN/drive windows $p | grep -o '\"Layer\
 sleep 0.3
 sub=$(menus | python3 -c 'import json,sys; m=json.loads(sys.argv[1]); print(next(l for l in sys.stdin if json.loads(l)["ID"] != m["ID"]).strip())' "$menu")
 subitems=$(rows "$sub")
-log "submenu \"$1\" ($name):"$'\n'"$(marks | awk 'BEGIN { RS = "" } NR == 2')"
+log "submenu \"$1\" ($name):"$'\n'"$(marks "$1")"
 if (( $# == 1 )); then
   shot $(python3 -c 'import json,sys
 a, b = json.loads(sys.argv[1]), json.loads(sys.argv[2])

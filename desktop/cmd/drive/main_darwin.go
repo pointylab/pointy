@@ -16,7 +16,7 @@
 //	drive windows PID         the on-screen windows of PID, front to back, in points
 //	drive displays            the displays' bounds, in points
 //	drive extras PID          the menu bar icons of PID, in points
-//	drive menus PID           the items of PID's open menus, with their check marks
+//	drive menus PID           PID's menu bar icon menu as a tree, with check marks
 //	drive keys COMBO [-window TITLE] PID...
 //	                          press a combination such as Cmd+Alt+K or Esc,
 //	                          only while the frontmost app is one of the pids
@@ -424,17 +424,17 @@ func extras(pid int) []extra {
 
 type menuItem struct {
 	Name     string
-	Checked  bool `json:",omitempty"`
-	Disabled bool `json:",omitempty"`
-	Submenu  bool `json:",omitempty"`
+	Checked  bool       `json:",omitempty"`
+	Disabled bool       `json:",omitempty"`
+	Items    []menuItem `json:",omitempty"`
 	X, Y     float64
 	W, H     float64
 }
 
-// openMenus lists the items of every menu of pid's that is open, read
-// through accessibility: a menu bar icon's menu hangs under its
-// AXMenuBarItem, and a submenu under its AXMenuItem.
-func openMenus(pid int) [][]menuItem {
+// trayMenu is the menu of pid's menu bar icon as a tree, read through
+// accessibility: the menu hangs under the icon's AXMenuBarItem, and each
+// submenu under its AXMenuItem, listed whether it is open or not.
+func trayMenu(pid int) []menuItem {
 	attr := func(el uintptr, name string) uintptr {
 		var out uintptr
 		if el == 0 || axCopyAttribute(el, uintptr(nsString(name)), &out) != 0 {
@@ -454,40 +454,39 @@ func openMenus(pid int) [][]menuItem {
 		}
 		return out
 	}
-	var out [][]menuItem
-	var walk func(el uintptr, depth int)
-	walk = func(el uintptr, depth int) {
-		if depth > 8 {
-			return
+	var items func(menu uintptr) []menuItem
+	items = func(menu uintptr) []menuItem {
+		out := []menuItem{}
+		for _, it := range kids(menu) {
+			var p point
+			var sz struct{ W, H float64 }
+			axValueGetValue(attr(it, "AXPosition"), 1, unsafe.Pointer(&p))
+			axValueGetValue(attr(it, "AXSize"), 2, unsafe.Pointer(&sz))
+			enabled := objc.ID(attr(it, "AXEnabled"))
+			m := menuItem{
+				Name:     str(it, "AXTitle"),
+				Checked:  str(it, "AXMenuItemMarkChar") != "",
+				Disabled: enabled != 0 && !objc.Send[bool](enabled, sel("boolValue")),
+				X:        p.X, Y: p.Y, W: sz.W, H: sz.H,
+			}
+			for _, k := range kids(it) {
+				if str(k, "AXRole") == "AXMenu" {
+					m.Items = items(k)
+				}
+			}
+			out = append(out, m)
 		}
-		for _, k := range kids(el) {
-			if str(k, "AXRole") != "AXMenu" {
-				walk(k, depth+1)
-				continue
-			}
-			var items []menuItem
-			for _, it := range kids(k) {
-				var p point
-				var sz struct{ W, H float64 }
-				axValueGetValue(attr(it, "AXPosition"), 1, unsafe.Pointer(&p))
-				axValueGetValue(attr(it, "AXSize"), 2, unsafe.Pointer(&sz))
-				enabled := objc.ID(attr(it, "AXEnabled"))
-				items = append(items, menuItem{
-					Name:     str(it, "AXTitle"),
-					Checked:  str(it, "AXMenuItemMarkChar") != "",
-					Disabled: enabled != 0 && !objc.Send[bool](enabled, sel("boolValue")),
-					Submenu:  len(kids(it)) > 0,
-					X:        p.X, Y: p.Y, W: sz.W, H: sz.H,
-				})
-			}
-			out = append(out, items)
-			for _, it := range kids(k) {
-				walk(it, depth+1)
+		return out
+	}
+	bar := attr(axCreateApplication(int32(pid)), "AXExtrasMenuBar")
+	for _, icon := range kids(bar) {
+		for _, k := range kids(icon) {
+			if str(k, "AXRole") == "AXMenu" {
+				return items(k)
 			}
 		}
 	}
-	walk(axCreateApplication(int32(pid)), 0)
-	return out
+	return nil
 }
 
 func goString(ns objc.ID) string {
@@ -587,7 +586,7 @@ func main() {
 	case "extras":
 		print(extras(int(num(args, 1))))
 	case "menus":
-		print(openMenus(int(num(args, 1))))
+		print(trayMenu(int(num(args, 1))))
 	case "displays":
 		var ids [8]uint32
 		var n uint32
