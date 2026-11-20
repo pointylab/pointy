@@ -24,6 +24,7 @@ finish() {
 trap finish EXIT
 expect() { local what=$1; shift; if "$@" > /dev/null 2>&1; then log "PASS $what"; else log "FAIL $what"; (( failed++ )); fi }
 until_true() { local end=$(( SECONDS + $1 )); shift; while (( SECONDS < end )); do "$@" > /dev/null 2>&1 && return 0; sleep 0.2; done; return 1; }
+no_card() { ! has card.html; }
 logged() { tail -${2:-30} "$EV/run.log" | grep -qF -- "$1"; }
 page_has() { js $1 "if (!document.getElementById('$2').innerText.includes($(print -r -- "$3" | node -e 'process.stdout.write(JSON.stringify(require("fs").readFileSync(0, "utf8").trim()))'))) throw 'no'"; }
 mock_got() { python3 -c 'import json,sys
@@ -48,6 +49,9 @@ expect "the card takes DSH's title" logged 'card title: Mock 标题' 3
 expect "the model got the question and the paragraph" mock_got $QUESTION "$PARAGRAPH"
 
 # 3. Closing a card mid-task keeps it as a pill, which turns done and opens the card again.
+# The first card goes first, so the next pick has to open a card of its own.
+js $cw "document.getElementById('close').click(); return 'closed'" > /dev/null
+until_true 5 no_card || log "(the first card stayed open)"
 cw=$(zsh $S/pick.sh kept) || cw=
 [ -n "$cw" ] || { log "FAIL a second pick opens a card"; (( failed++ )); exit 1; }
 zsh $S/ask.sh $cw kept $QUESTION keep || log "(ask.sh keep failed)"
@@ -57,5 +61,6 @@ expect "the pill keeps DSH's title" sh -c "tail -4 '$EV/run.log' | grep -q 'pill
 # The click closes the pill window, so it waits until eval has returned.
 js $(win pill.html) "setTimeout(() => [...document.querySelectorAll('.pill:not(.out)')].at(-1).click()); return 'ok'" > /dev/null
 expect "clicking the pill brings the card back" until_true 5 has card.html
+sleep 0.6  # the card fades in
 shot_page card.html kept-restored
 exit $(( failed > 0 ))
