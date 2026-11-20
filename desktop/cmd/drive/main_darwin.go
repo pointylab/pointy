@@ -16,6 +16,15 @@
 //	drive windows PID         the on-screen windows of PID, front to back, in points
 //	drive displays            the displays' bounds, in points
 //	drive extras PID          the menu bar icons of PID, in points
+//	drive menus PID           the items of PID's open menus, with their check marks
+//	drive keys COMBO [-window TITLE] PID...
+//	                          press a combination such as Cmd+Alt+K or Esc,
+//	                          only while the frontmost app is one of the pids
+//	                          (and its focused window is TITLE); exits 3 otherwise
+//
+// With DRIVE_STAMP set to a file, drive records there when it last posted
+// input and when the user last did, so idle reports the user's idle time and
+// not the time since drive's own clicks.
 package main
 
 import (
@@ -25,6 +34,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -58,6 +68,8 @@ const (
 var (
 	cgEventCreateMouseEvent func(source uintptr, typ uint32, p point, button uint32) uintptr
 	cgEventPost             func(tap uint32, event uintptr)
+	cgEventCreateKeyboard   func(source uintptr, key uint16, down bool) uintptr
+	cgEventSetFlags         func(event uintptr, flags uint64)
 	cgEventGetLocation      func(event uintptr) point
 	cgEventTapCreate        func(tap, place, options uint32, mask uint64, callback, refcon uintptr) uintptr
 	cgEventTapEnable        func(tap uintptr, enable bool)
@@ -95,6 +107,8 @@ func load() {
 	purego.RegisterLibFunc(&axValueGetValue, as, "AXValueGetValue")
 	purego.RegisterLibFunc(&cgEventCreateMouseEvent, cg, "CGEventCreateMouseEvent")
 	purego.RegisterLibFunc(&cgEventPost, cg, "CGEventPost")
+	purego.RegisterLibFunc(&cgEventCreateKeyboard, cg, "CGEventCreateKeyboardEvent")
+	purego.RegisterLibFunc(&cgEventSetFlags, cg, "CGEventSetFlags")
 	purego.RegisterLibFunc(&cgEventGetLocation, cg, "CGEventGetLocation")
 	purego.RegisterLibFunc(&cgEventTapCreate, cg, "CGEventTapCreate")
 	purego.RegisterLibFunc(&cgEventTapEnable, cg, "CGEventTapEnable")
@@ -172,6 +186,125 @@ func listen(seconds float64, at point) map[string]int64 {
 		"leftDown": counts[eventLeftDown].Load(), "leftUp": counts[eventLeftUp].Load(),
 		"rightDown": counts[eventRightDown].Load(), "rightUp": counts[eventRightUp].Load(),
 	}
+}
+
+// Virtual key codes of the ANSI layout, and the modifiers with their flags.
+var keyCodes = map[string]uint16{
+	"A": 0, "S": 1, "D": 2, "F": 3, "H": 4, "G": 5, "Z": 6, "X": 7, "C": 8, "V": 9,
+	"B": 11, "Q": 12, "W": 13, "E": 14, "R": 15, "Y": 16, "T": 17, "1": 18, "2": 19,
+	"3": 20, "4": 21, "6": 22, "5": 23, "9": 25, "7": 26, "8": 28, "0": 29, "O": 31,
+	"U": 32, "I": 34, "P": 35, "L": 37, "J": 38, "K": 40, "N": 45, "M": 46,
+	"Return": 36, "Enter": 36, "Tab": 48, "Space": 49, "Delete": 51, "Esc": 53, "Escape": 53,
+}
+
+type modKey struct {
+	code uint16
+	flag uint64
+}
+
+var modKeys = map[string]modKey{
+	"Cmd": {55, 1 << 20}, "Command": {55, 1 << 20}, "Shift": {56, 1 << 17},
+	"Alt": {58, 1 << 19}, "Option": {58, 1 << 19}, "Ctrl": {59, 1 << 18}, "Control": {59, 1 << 18},
+}
+
+func postKey(code uint16, down bool, flags uint64) {
+	e := cgEventCreateKeyboard(0, code, down)
+	cgEventSetFlags(e, flags)
+	cgEventPost(hidEventTap, e)
+	cfRelease(e)
+	time.Sleep(20 * time.Millisecond)
+}
+
+// press holds the combination's modifiers down in order, presses its key
+// and lets go of them in reverse, as a person does.
+func press(combo string) {
+	parts := strings.Split(combo, "+")
+	code, ok := keyCodes[parts[len(parts)-1]]
+	if !ok {
+		fail("unknown key " + parts[len(parts)-1])
+	}
+	var flags uint64
+	var mods []modKey
+	for _, m := range parts[:len(parts)-1] {
+		k, ok := modKeys[m]
+		if !ok {
+			fail("unknown modifier " + m)
+		}
+		flags |= k.flag
+		mods = append(mods, k)
+		postKey(k.code, true, flags)
+	}
+	postKey(code, true, flags)
+	postKey(code, false, flags)
+	for i := len(mods) - 1; i >= 0; i-- {
+		flags &^= mods[i].flag
+		postKey(mods[i].code, false, flags)
+	}
+}
+
+// focusedTitle is the title of pid's focused window, read through
+// accessibility, since window names need Screen Recording.
+func focusedTitle(pid int) string {
+	var win, title uintptr
+	app := axCreateApplication(int32(pid))
+	if app == 0 || axCopyAttribute(app, uintptr(nsString("AXFocusedWindow")), &win) != 0 {
+		return ""
+	}
+	if axCopyAttribute(win, uintptr(nsString("AXTitle")), &title) != 0 {
+		return ""
+	}
+	return goString(objc.ID(title))
+}
+
+func now() float64 { return float64(time.Now().UnixNano()) / 1e9 }
+
+func sinceInput() float64 {
+	const hidSystemState, anyInput = 1, ^uint32(0)
+	return secondsSinceInput(hidSystemState, anyInput)
+}
+
+// readStamp gives when the user last gave input and when drive last
+// posted some, as Unix seconds, from DRIVE_STAMP.
+func readStamp() (user, posted float64) {
+	b, err := os.ReadFile(os.Getenv("DRIVE_STAMP"))
+	if err != nil {
+		return 0, 0
+	}
+	if f := strings.Fields(string(b)); len(f) == 2 {
+		user, _ = strconv.ParseFloat(f[0], 64)
+		posted, _ = strconv.ParseFloat(f[1], 64)
+	}
+	return user, posted
+}
+
+// injecting posts input through fn and records it in DRIVE_STAMP. Input
+// that came after drive's last post was the user's.
+func injecting(fn func()) {
+	path := os.Getenv("DRIVE_STAMP")
+	if path == "" {
+		fn()
+		return
+	}
+	user, posted := readStamp()
+	if last := now() - sinceInput(); last > posted+0.3 {
+		user = last
+	}
+	fn()
+	os.WriteFile(path, fmt.Appendf(nil, "%.3f %.3f\n", user, now()), 0o644)
+}
+
+// userIdle is the seconds since the user's last input. When drive's own
+// post was the last input, it counts from the user's input before it.
+func userIdle() float64 {
+	idle := sinceInput()
+	if os.Getenv("DRIVE_STAMP") == "" {
+		return idle
+	}
+	user, posted := readStamp()
+	if posted > 0 && now()-idle <= posted+0.3 {
+		return now() - user
+	}
+	return idle
 }
 
 func sel(s string) objc.SEL  { return objc.RegisterName(s) }
@@ -289,6 +422,74 @@ func extras(pid int) []extra {
 	return out
 }
 
+type menuItem struct {
+	Name     string
+	Checked  bool `json:",omitempty"`
+	Disabled bool `json:",omitempty"`
+	Submenu  bool `json:",omitempty"`
+	X, Y     float64
+	W, H     float64
+}
+
+// openMenus lists the items of every menu of pid's that is open, read
+// through accessibility: a menu bar icon's menu hangs under its
+// AXMenuBarItem, and a submenu under its AXMenuItem.
+func openMenus(pid int) [][]menuItem {
+	attr := func(el uintptr, name string) uintptr {
+		var out uintptr
+		if el == 0 || axCopyAttribute(el, uintptr(nsString(name)), &out) != 0 {
+			return 0
+		}
+		return out
+	}
+	str := func(el uintptr, name string) string { return goString(objc.ID(attr(el, name))) }
+	kids := func(el uintptr) []uintptr {
+		list := objc.ID(attr(el, "AXChildren"))
+		if list == 0 {
+			return nil
+		}
+		var out []uintptr
+		for i := range objc.Send[int](list, sel("count")) {
+			out = append(out, uintptr(list.Send(sel("objectAtIndex:"), i)))
+		}
+		return out
+	}
+	var out [][]menuItem
+	var walk func(el uintptr, depth int)
+	walk = func(el uintptr, depth int) {
+		if depth > 8 {
+			return
+		}
+		for _, k := range kids(el) {
+			if str(k, "AXRole") != "AXMenu" {
+				walk(k, depth+1)
+				continue
+			}
+			var items []menuItem
+			for _, it := range kids(k) {
+				var p point
+				var sz struct{ W, H float64 }
+				axValueGetValue(attr(it, "AXPosition"), 1, unsafe.Pointer(&p))
+				axValueGetValue(attr(it, "AXSize"), 2, unsafe.Pointer(&sz))
+				enabled := objc.ID(attr(it, "AXEnabled"))
+				items = append(items, menuItem{
+					Name:     str(it, "AXTitle"),
+					Checked:  str(it, "AXMenuItemMarkChar") != "",
+					Disabled: enabled != 0 && !objc.Send[bool](enabled, sel("boolValue")),
+					Submenu:  len(kids(it)) > 0,
+					X:        p.X, Y: p.Y, W: sz.W, H: sz.H,
+				})
+			}
+			out = append(out, items)
+			for _, it := range kids(k) {
+				walk(it, depth+1)
+			}
+		}
+	}
+	walk(axCreateApplication(int32(pid)), 0)
+	return out
+}
+
 func goString(ns objc.ID) string {
 	if ns == 0 || !objc.Send[bool](ns, sel("isKindOfClass:"), class("NSString")) {
 		return ""
@@ -331,15 +532,36 @@ func main() {
 	load()
 	args := os.Args[1:]
 	if len(args) == 0 {
-		fail("usage: drive move|shake|click|listen|cursor|front|chain|locked")
+		fail("usage: drive move|shake|click|keys|listen|cursor|front|chain|at|windows|extras|menus|displays|idle|locked")
 	}
 	switch args[0] {
 	case "move":
-		post(eventMoved, point{num(args, 1), num(args, 2)}, 0)
+		injecting(func() { post(eventMoved, point{num(args, 1), num(args, 2)}, 0) })
 	case "shake":
-		shake(point{num(args, 1), num(args, 2)})
+		injecting(func() { shake(point{num(args, 1), num(args, 2)}) })
 	case "click":
-		click(point{num(args, 1), num(args, 2)}, len(args) > 3 && args[3] == "right")
+		injecting(func() { click(point{num(args, 1), num(args, 2)}, len(args) > 3 && args[3] == "right") })
+	case "keys":
+		if len(args) < 3 {
+			fail("usage: drive keys COMBO [-window TITLE] PID...")
+		}
+		title, pids := "", args[2:]
+		if pids[0] == "-window" && len(pids) > 2 {
+			title, pids = pids[1], pids[2:]
+		}
+		f := front()
+		ok := false
+		for i := range pids {
+			ok = ok || int(num(pids, i)) == f
+		}
+		if ok && title != "" {
+			ok = focusedTitle(f) == title
+		}
+		if !ok {
+			fmt.Fprintf(os.Stderr, "drive: the frontmost app is pid %d (window %q), not one of %v; no keys sent\n", f, focusedTitle(f), pids)
+			os.Exit(3)
+		}
+		injecting(func() { press(args[1]) })
 	case "listen":
 		print(listen(num(args, 1), point{num(args, 2), num(args, 3)}))
 	case "cursor":
@@ -364,6 +586,8 @@ func main() {
 		print(windowsOf(int(num(args, 1))))
 	case "extras":
 		print(extras(int(num(args, 1))))
+	case "menus":
+		print(openMenus(int(num(args, 1))))
 	case "displays":
 		var ids [8]uint32
 		var n uint32
@@ -375,8 +599,7 @@ func main() {
 		}
 		print(out)
 	case "idle":
-		const hidSystemState, anyInput = 1, ^uint32(0)
-		print(secondsSinceInput(hidSystemState, anyInput))
+		print(userIdle())
 	case "locked":
 		print(locked())
 	default:

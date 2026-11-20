@@ -9,6 +9,12 @@ POINTY_PORT=47397
 MOCK_PORT=47398
 DSH_PORT=3093
 export MYGO_AUTOMATION_SESSION=verify-pointy-${VP_RUN:t}
+# drive records its own input here, so `drive idle` counts only the user's.
+export DRIVE_STAMP=$VP_RUN/input-stamp
+# SRC is the checkout the run built (up.sh with VP_REPO); the tools come from REPO.
+SRC=$(cat "$VP_RUN/src" 2>/dev/null || print -r -- $REPO)
+# SOLO: the run started Pointy alone, without DSH and the mock model.
+[ -e "$VP_RUN/solo" ] && SOLO=1 || SOLO=
 mkdir -p "$EV"
 
 pid() { cat "$VP_RUN/pids/$1" 2>/dev/null; }
@@ -51,3 +57,13 @@ wait_until() {
   while (( SECONDS < end )); do "$@" > /dev/null 2>&1 && return 0; sleep 0.2; done
   die "timed out after ${secs}s waiting for $what"
 }
+
+# shot_page <page> <name>: saves the newest window showing the page as
+# WebKit draws it, which needs no Screen Recording.
+shot_page() { pa open --socket "$SOCK" > /dev/null && pa screenshot --window "$(win $1)" "$EV/$2.png" > /dev/null; }
+
+# shot <x> <y> <w> <h> <name>: saves that part of the screen, or logs why not.
+shot() { screencapture -x -R $1,$2,$3,$4 "$EV/$5.png" 2> /dev/null || log "no $5.png: screencapture failed (is Screen Recording granted to this terminal?)"; }
+
+# setting <key>: a value from the run's Pointy settings.json.
+setting() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2], ""))' "$VP_RUN/home/.pointy/settings.json" $1; }
