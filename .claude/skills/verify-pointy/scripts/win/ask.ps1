@@ -24,13 +24,13 @@ if ($Keep) {
   Wait-Until 10 'a pill' { Has-Page 'pill.html' }
   $pw = Win-Of 'pill.html'
   # Pills line up oldest first; an earlier card still finishing has one too.
-  Log "pill while running: $(Js $pw 'return (p => p.className + " | " + p.innerText + " | " + p.title)([...document.querySelectorAll(".pill:not(.out)")].at(-1))')"
+  Log "pill while running: $(Js $pw 'return (p => (p.className + " | " + p.innerText + " | " + p.title).replace(/\s+/g, " "))([...document.querySelectorAll(".pill:not(.out)")].at(-1))')"
   Pa screenshot --window $pw (Join-Path $EV "$Name-pill-run.png") | Out-Null
   Wait-Until 60 'the pill to turn done' {
     Js $pw 'if (![...document.querySelectorAll(".pill:not(.out)")].at(-1).classList.contains("done")) throw "running"' 2>$null | Out-Null
     $true
   }
-  Log "pill when done: $(Js $pw 'return (p => p.className + " | " + p.innerText + " | " + p.title)([...document.querySelectorAll(".pill:not(.out)")].at(-1))')"
+  Log "pill when done: $(Js $pw 'return (p => (p.className + " | " + p.innerText + " | " + p.title).replace(/\s+/g, " "))([...document.querySelectorAll(".pill:not(.out)")].at(-1))')"
   Pa screenshot --window $pw (Join-Path $EV "$Name-pill-done.png") | Out-Null
 } else {
   Wait-Until 60 'the answer' {
