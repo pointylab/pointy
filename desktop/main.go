@@ -32,6 +32,9 @@ const fullscreenPoll = 500 * time.Millisecond
 // mygo runs.
 var windows = ui.New()
 
+// appTray holds the tray icon for e2e tests.
+var appTray *ui.Tray
+
 func main() {
 	if out := os.Getenv("POINTY_SELFCHECK"); out != "" {
 		selfCheck(out)
@@ -194,6 +197,7 @@ func start(home, root string, pages fs.FS, sys desktop.Desktop, logError func(st
 		Quit:               mygo.App.Quit,
 		Log:                logError,
 	}, icon)
+	appTray = tray
 	if err != nil {
 		logError("tray", err)
 	}

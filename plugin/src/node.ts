@@ -322,6 +322,10 @@ export function apply(ctx: DshContext) {
   const started = new Set<string>()
   /** Sessions a closed card asked to archive while their turn still ran. */
   const archiving = new Set<string>()
+  /** Sessions a closed card handed back to be archived. The session list
+   * leaves them out from the request on, archived or not yet, as DSH's own
+   * list can still show one for a moment after the archive. */
+  const leaving = new Set<string>()
   const archiveTimers = new Set<ReturnType<typeof setTimeout>>()
   let lastLineAt = 0
   let lineBusy = false
@@ -530,6 +534,7 @@ export function apply(ctx: DshContext) {
         // later must not archive it, and a pending archive is off.
         started.delete(msg.sessionId)
         archiving.delete(msg.sessionId)
+        leaving.delete(msg.sessionId)
         requestFocus(msg.sessionId)
       }
     } else if (msg.type === 'archive') {
@@ -549,12 +554,12 @@ export function apply(ctx: DshContext) {
 
   async function listSessions(): Promise<SessionItem[]> {
     const controller = ctx.get('sessionController')
-    const seen = new Map<string, SessionItem>([...titles].map(([id, title]) => [id, { sessionId: id, title }]))
+    const seen = new Map<string, SessionItem>([...titles].filter(([id]) => !leaving.has(id)).map(([id, title]) => [id, { sessionId: id, title }]))
     const workspaceOf = new Map(workspaceList().flatMap(w => w.sessionIds.map((id): [string, string] => [id, w.title])))
     if (controller) {
       const { items } = await controller.list({}, AbortSignal.timeout(5000))
       for (const item of items) {
-        if (item.archived || item.blank) continue
+        if (item.archived || item.blank || leaving.has(item.sessionId)) continue
         const named = item.projections?.values?.title ?? item.title ?? titles.get(item.sessionId)
         const title = isOurPreamble(named) ? undefined : named
         const selection = item.projections?.values?.modelSelection?.next
@@ -694,6 +699,7 @@ export function apply(ctx: DshContext) {
       logger.warn('pointy: this DSH cannot archive a session from a plugin')
       return
     }
+    leaving.add(sessionId)
     if (registry.archivedSessionIds?.includes(sessionId)) return forgetSession(sessionId)
     try {
       await registry.archiveSession(sessionId)
@@ -718,6 +724,8 @@ export function apply(ctx: DshContext) {
         }
         return
       }
+      // It stays in DSH, so cards may offer it again.
+      leaving.delete(sessionId)
       logger.warn(`pointy: could not archive the session a closed card asked in: ${(error as Error)?.message ?? error}`)
     }
   }

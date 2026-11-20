@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -40,6 +41,102 @@ func (E2E) CloseOverlays() {
 		o.Close()
 	}
 	e2eOverlays = nil
+}
+
+// TrayItem describes an entry in the tray menu.
+type TrayItem struct {
+	Label     string     `json:"label"`
+	Checked   bool       `json:"checked"`
+	Disabled  bool       `json:"disabled"`
+	Separator bool       `json:"separator"`
+	Submenu   []TrayItem `json:"submenu"`
+}
+
+func trayItems(items []*mygo.MenuItem) []TrayItem {
+	out := make([]TrayItem, 0, len(items))
+	for _, it := range items {
+		if it == nil || it.Hidden {
+			continue
+		}
+		var sub []TrayItem
+		if len(it.Submenu) > 0 {
+			sub = trayItems(it.Submenu)
+		}
+		out = append(out, TrayItem{
+			Label:     it.Label,
+			Checked:   it.Checked,
+			Disabled:  it.Disabled,
+			Separator: it.Type == mygo.MenuItemSeparator,
+			Submenu:   sub,
+		})
+	}
+	return out
+}
+
+func (E2E) TrayMenu() []TrayItem {
+	var out []TrayItem
+	mygo.RunOnMain(func() {
+		out = trayItems(appTray.Items())
+	})
+	return out
+}
+
+func (E2E) ChooseTray(path []string) string {
+	if len(path) == 0 {
+		return "empty path"
+	}
+	var errMsg string
+	mygo.RunOnMain(func() {
+		if appTray == nil {
+			errMsg = "tray is not ready"
+			return
+		}
+		items := appTray.Items()
+		for i, want := range path {
+			var found *mygo.MenuItem
+			var labels []string
+			for _, it := range items {
+				if it == nil || it.Hidden || it.Type == mygo.MenuItemSeparator {
+					continue
+				}
+				labels = append(labels, it.Label)
+				if found == nil && it.Label == want {
+					found = it
+				}
+			}
+			if found == nil {
+				errMsg = fmt.Sprintf("no item %q in %v", want, labels)
+				return
+			}
+			if i < len(path)-1 {
+				if len(found.Submenu) == 0 {
+					errMsg = fmt.Sprintf("item %q has no submenu", want)
+					return
+				}
+				items = found.Submenu
+				continue
+			}
+			if len(found.Submenu) > 0 || found.Type == mygo.MenuItemSubmenu {
+				errMsg = fmt.Sprintf("item %q is a submenu", want)
+				return
+			}
+			if found.Disabled {
+				errMsg = fmt.Sprintf("item %q is disabled", want)
+				return
+			}
+			switch found.Type {
+			case mygo.MenuItemCheckbox:
+				found.Checked = !found.Checked
+			case mygo.MenuItemRadio:
+				found.Checked = true
+			}
+			if found.Click != nil {
+				found.Click(found, nil)
+			}
+			appTray.Update()
+		}
+	})
+	return errMsg
 }
 
 func init() {

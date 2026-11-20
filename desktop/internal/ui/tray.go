@@ -64,6 +64,15 @@ func (t *Tray) Update() {
 	t.tray.SetMenu(mygo.NewMenu(items))
 }
 
+// Items builds the menu items from the current state, as opening the menu sees them.
+func (t *Tray) Items() []*mygo.MenuItem {
+	if t == nil {
+		return nil
+	}
+	_, items := trayContent(t.deps)
+	return items
+}
+
 func trayContent(d TrayDeps) (string, []*mygo.MenuItem) {
 	st := d.Agent()
 	s := d.Settings.Get()

@@ -9,6 +9,12 @@ POINTY_PORT=47397
 MOCK_PORT=47398
 DSH_PORT=3093
 export MYGO_AUTOMATION_SESSION=verify-pointy-${VP_RUN:t}
+# drive records its own input here, so `drive idle` counts only the user's.
+export DRIVE_STAMP=$VP_RUN/input-stamp
+# SRC is the checkout the run built (up.sh with VP_REPO); the tools come from REPO.
+SRC=$(cat "$VP_RUN/src" 2>/dev/null || print -r -- $REPO)
+# SOLO: the run started Pointy alone, without DSH and the mock model.
+[ -e "$VP_RUN/solo" ] && SOLO=1 || SOLO=
 mkdir -p "$EV"
 
 pid() { cat "$VP_RUN/pids/$1" 2>/dev/null; }
@@ -42,7 +48,7 @@ guard() {
 }
 
 # mine <x> <y> <pid>...: aborts unless the top window at x,y belongs to one of the pids.
-mine() { local x=$1 y=$2 o; shift 2; o=$(drive at $x $y); (( ${@[(Ie)$o]} )) || die "the window at $x,$y is pid $o's, not $*'s; not touching it"; }
+mine() { local x=$1 y=$2 o; shift 2; o=$(drive at $x $y); (( ${@[(Ie)$o]} )) || die "the window at $x,$y is pid $o's ($(ps -p $o -o comm= 2> /dev/null)), not $*'s; not touching it"; }
 
 # wait_until <seconds> <what> <command...>: polls the command until it succeeds.
 wait_until() {
@@ -51,3 +57,18 @@ wait_until() {
   while (( SECONDS < end )); do "$@" > /dev/null 2>&1 && return 0; sleep 0.2; done
   die "timed out after ${secs}s waiting for $what"
 }
+
+# close_doc <path>: closes the TextEdit window showing that document by its
+# close button, through System Events, so TextEdit itself needs no
+# Automation permission. The run's documents are never edited.
+close_doc() { osascript -e "tell application \"System Events\" to tell process \"TextEdit\" to click (first button of window \"${1:t}\" whose subrole is \"AXCloseButton\")" > /dev/null 2>&1; }
+
+# shot_page <page> <name>: saves the newest window showing the page as
+# WebKit draws it, which needs no Screen Recording.
+shot_page() { pa open --socket "$SOCK" > /dev/null && pa screenshot --window "$(win $1)" "$EV/$2.png" > /dev/null; }
+
+# shot <x> <y> <w> <h> <name>: saves that part of the screen, or logs why not.
+shot() { screencapture -x -R $1,$2,$3,$4 "$EV/$5.png" 2> /dev/null || log "no $5.png: screencapture failed (is Screen Recording granted to this terminal?)"; }
+
+# setting <key>: a value from the run's Pointy settings.json.
+setting() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2], ""))' "$VP_RUN/home/.pointy/settings.json" $1; }
