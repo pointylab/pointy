@@ -55,6 +55,10 @@ js $cw "setTimeout(() => document.getElementById('close').click()); return 'clos
 until_true 5 no_card || log "(the first card stayed open)"
 cw=$(zsh $S/pick.sh kept) || cw=
 [ -n "$cw" ] || { log "FAIL a second pick opens a card"; (( failed++ )); exit 1; }
+# A pick on the same page offers to go on in the last session, which the
+# closed card archives a moment later; asking in a new task keeps the pill
+# from depending on how soon that lands.
+log "second card asks in: $(js $cw "const b = document.getElementById('new-task'); if (!b.hidden) b.click(); return document.getElementById('target-label').textContent")"
 zsh $S/ask.sh $cw kept $QUESTION keep || log "(ask.sh keep failed)"
 expect "closing the card mid-task shows a running pill" logged 'pill while running: pill run' 6
 expect "the pill turns done" logged 'pill when done: pill done' 4

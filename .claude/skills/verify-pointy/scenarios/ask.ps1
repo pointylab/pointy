@@ -82,6 +82,10 @@ try {
       Log 'FAIL a second pick opens a card'
       $failed++
     } else {
+      # A pick on the same page offers to go on in the last session, which the
+      # closed card archives a moment later; asking in a new task keeps the
+      # pill from depending on how soon that lands.
+      Log "second card asks in: $(Js $cw 'const b = document.getElementById("new-task"); if (!b.hidden) b.click(); return document.getElementById("target-label").textContent')"
       try { & (Join-Path $s 'ask.ps1') $cw 'kept' $question -Keep } catch { Log "(ask.ps1 -Keep failed: $_)" }
       Expect 'closing the card mid-task shows a running pill' { Logged 'pill while running: pill run' 6 }
       Expect 'the pill turns done' { Logged 'pill when done: pill done' 4 }
