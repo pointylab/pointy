@@ -8,6 +8,14 @@
 #   VP_SOLO=1           starts Pointy alone, without DSH and the mock model.
 set -u
 export VP_RUN=${${VP_RUN:-$(mktemp -d /tmp/verify-pointy.XXXXXX)}:A}  # DSH wants the real path, /private/tmp
+# Keeps the evidence of the last two runs besides this one. Older run
+# directories go, unless a process one of them recorded still lives.
+runs=(/private/tmp/verify-pointy.*(N/om))
+for old in ${${runs:#$VP_RUN}[3,-1]}; do
+  live=
+  for f in $old/pids/*(N); do kill -0 $(cat $f) 2> /dev/null && live=1; done
+  [ -n "$live" ] || rm -rf "$old"
+done
 print -r -- ${${VP_REPO:-${0:A:h:h:h:h:h}}:A} > "$VP_RUN/src"
 [ -n "${VP_SOLO:-}" ] && : > "$VP_RUN/solo"
 source ${0:A:h}/env.sh

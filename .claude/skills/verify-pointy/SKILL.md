@@ -91,7 +91,7 @@ Everything goes to `$VP_RUN/evidence/`. `run.log` gets every logged step, `mock.
 zsh .claude/skills/verify-pointy/scripts/down.sh
 ```
 
-Kills the recorded PIDs and their children and closes the fixture documents the run opened. Deletes the scratch homes, the binaries and the socket. `$VP_RUN/evidence` stays. Run it after every run, failed ones too.
+Kills the recorded PIDs and their children and closes the fixture documents the run opened. Deletes the scratch homes, the binaries and the socket. `$VP_RUN/evidence` stays. Run it after every run, failed ones too. `up.sh` and `up.ps1` delete run directories older than the last two, except one whose recorded process still lives, so evidence does not pile up.
 
 ## Windows
 
