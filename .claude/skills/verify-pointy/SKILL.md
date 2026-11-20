@@ -13,7 +13,7 @@ A run here starts its own Pointy, DSH and model on scratch homes and ports, and 
 
 These were learned from runs that went wrong. Every script enforces them; keep them when you add one.
 
-- **Never send synthetic keystrokes.** A previous run's typing landed in Jesse's apps. Text goes into pages through `mygo-automation eval`, never `type` or `key`, never `osascript ... keystroke`.
+- **Never type into other apps.** A previous run's typing landed in Jesse's apps. Text goes into pages through `mygo-automation eval`, never `type` or `key`, never `osascript ... keystroke`. The one exception is `keys.sh`, for what only real input reaches (a recorded chord, a global shortcut): it presses a combination only while the frontmost app is the run's Pointy or TextEdit with the run's fixture document focused, after `guard`.
 - **Wait until the user has been idle for at least 30 s, and abort otherwise.** `guard` in `scripts/env.sh` does this before every batch of mouse input. It waits up to 15 min (`VP_WAIT`), then gives up. If it gives up, report that and stop. Don't lower `VP_IDLE` to get a run through.
 - **Wait while the screen is locked.** `guard` checks `CGSSessionScreenIsLocked` (`drive locked`). WebKit paints nothing while the screen is locked, so screenshots come out blank and page heights read 0.
 - **Move the mouse only over windows the run created.** `mine X Y PID` checks the window owner before each click. The tray icon sits in a Control Center window on macOS 26, so `tray.sh` checks it through accessibility (`drive extras PID`) instead.
@@ -45,6 +45,13 @@ Two traps `up.sh` already handles:
 
 Pointy reads `locale` from `settings.json` only at start. Jesse's Mac lists `en-US` first, so `""` shows English there. Pass `zh-CN` to check the Chinese UI.
 
+Two switches, for runs that do not need DSH:
+
+- `VP_SOLO=1` starts Pointy alone, without DSH and the mock model, so `dsh` need not be installed.
+- `VP_REPO=<checkout>` builds Pointy, its pages and the plugin from another checkout, such as a pull request's worktree, with the tools of this one.
+
+Screenshots of pages come from `shot_page` (`mygo-automation screenshot`), which needs no Screen Recording. Screenshots of the menu bar and the fixture come from `screencapture` and are skipped, with a line in `run.log`, where Screen Recording is not granted.
+
 ## Doctor
 
 ```sh
@@ -61,11 +68,13 @@ Every script sources `scripts/env.sh`, which needs `VP_RUN` and gives `pa` (mygo
 | --- | --- |
 | `pick.sh <name>` | Opens `fixture.txt` as a new TextEdit document, shakes over it, clicks its first paragraph, and prints the card's window id. |
 | `ask.sh <card> <name> <question> [keep]` | Asks in full mode through the card page and logs every progress line. With `keep`, closes the card mid-task and follows the pill to done. |
-| `tray.sh <name> [item [subitem]]` | Opens the tray menu with a real click, logs its items (read through AX) and the icon's tooltip, then chooses `item` > `subitem` or closes the menu. |
+| `tray.sh <name> [item [subitem]]` | Opens the tray menu with a real click, logs its items with their check marks (read through AX) and the icon's tooltip, then chooses `item` > `subitem` or closes the menu. With one item that has a submenu, it logs the submenu and closes the menu. |
+| `fixture.sh` | Opens `fixture.txt` as the run's own TextEdit document, brings it to the front and prints `pid x y w h` of its window. |
+| `keys.sh <combo> [pointy\|fixture\|both]` | Presses a combination such as `Cmd+Alt+K` or `Esc` with real input, under the rule above. |
 
 Page windows are `[page]` lines in `pa windows`, as `w3 [page] "Pointy" url=.../card/card.html`. Read page state with `js`, for example `js $(win card.html) "return document.getElementById('activity').innerText"`. Grab data comes from `js $cw "return window.mygo.call('Card.Init')"`.
 
-Desktop input goes only through `$VP_RUN/bin/drive` (`move`, `shake`, `click`, `chain`, `at`, `windows`, `extras`, `idle`, `locked`). Page input goes only through `eval`. The e2e build also binds `E2E.OpenGrab`, `E2E.ShowWelcome` and others (`desktop/automation_e2e.go`), which `pa eval --window <the e2e window> "mygo.call('E2E.ShowWelcome')"` reaches. They skip the user path, so use them only to set up a state the feature under test does not cover.
+Desktop input goes only through `$VP_RUN/bin/drive` (`move`, `shake`, `click`, `keys`, `chain`, `at`, `windows`, `extras`, `menus`, `idle`, `locked`). `drive` records its own input in `$VP_RUN/input-stamp`, so `drive idle` counts only the user's. Page input goes only through `eval`. The e2e build also binds `E2E.OpenGrab`, `E2E.ShowWelcome` and others (`desktop/automation_e2e.go`), which `pa eval --window <the e2e window> "mygo.call('E2E.ShowWelcome')"` reaches. They skip the user path, so use them only to set up a state the feature under test does not cover.
 
 ## Evidence
 
@@ -132,6 +141,12 @@ pwsh -NoProfile -File .claude/skills/verify-pointy/scenarios/hotkey.ps1 [-Repo <
 ```
 
 `-Keep` leaves the run up for a look; run `down.ps1` after.
+
+The macOS half has the same scenario, run from Terminal or over SSH once the terminal (or `sshd-keygen-wrapper`) has Accessibility:
+
+```sh
+zsh .claude/skills/verify-pointy/scenarios/hotkey.sh [<checkout>] [keep]
+```
 
 ## Feature map
 
