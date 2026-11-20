@@ -15,10 +15,11 @@ if [ -n "$keep" ]; then
   js $cw "document.getElementById('close').click(); return 'closed'" > /dev/null
   wait_until 10 "a pill" has pill.html
   pw=$(win pill.html)
-  log "pill while running: $(js $pw "return [...document.querySelectorAll('.pill')].map(p => p.className + ' | ' + p.innerText + ' | ' + p.title)")"
+  # Pills line up oldest first; an earlier card still finishing has one too.
+  log "pill while running: $(js $pw "return (p => p.className + ' | ' + p.innerText + ' | ' + p.title)([...document.querySelectorAll('.pill:not(.out)')].at(-1))")"
   pa screenshot --window $pw "$EV/$name-pill-run.png" > /dev/null
-  wait_until 60 "the pill to turn done" js $pw "if (!document.querySelector('.pill.done')) throw 'running'"
-  log "pill when done: $(js $pw "return [...document.querySelectorAll('.pill')].map(p => p.className + ' | ' + p.innerText + ' | ' + p.title)")"
+  wait_until 60 "the pill to turn done" js $pw "if (![...document.querySelectorAll('.pill:not(.out)')].at(-1).classList.contains('done')) throw 'running'"
+  log "pill when done: $(js $pw "return (p => p.className + ' | ' + p.innerText + ' | ' + p.title)([...document.querySelectorAll('.pill:not(.out)')].at(-1))")"
   pa screenshot --window $pw "$EV/$name-pill-done.png" > /dev/null
 else
   wait_until 60 "the answer" js $cw "if (document.getElementById('status').className !== 'done') throw 'running'"

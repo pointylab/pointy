@@ -77,14 +77,14 @@ try {
       $failed++
     } else {
       try { & (Join-Path $s 'ask.ps1') $cw 'kept' $question -Keep } catch { Log "(ask.ps1 -Keep failed: $_)" }
-      Expect 'closing the card mid-task shows a running pill' { Logged 'pill while running: ["pill run' 6 }
-      Expect 'the pill turns done' { Logged 'pill when done: ["pill done' 4 }
+      Expect 'closing the card mid-task shows a running pill' { Logged 'pill while running: pill run' 6 }
+      Expect 'the pill turns done' { Logged 'pill when done: pill done' 4 }
       Expect "the pill keeps DSH's title" {
         [bool](Get-Content -LiteralPath (Join-Path $EV 'run.log') -Tail 4 -Encoding utf8 |
             Where-Object { $_ -match 'pill when done: .*Mock 标题' })
       }
       # The click closes the pill window, so it waits until eval has returned.
-      Js (Win-Of 'pill.html') 'setTimeout(() => document.querySelector(".pill").click()); return "ok"' | Out-Null
+      Js (Win-Of 'pill.html') 'setTimeout(() => [...document.querySelectorAll(".pill:not(.out)")].at(-1).click()); return "ok"' | Out-Null
       Expect 'clicking the pill brings the card back' {
         $end = (Get-Date).AddSeconds(5)
         while ((Get-Date) -lt $end) {

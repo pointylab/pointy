@@ -51,11 +51,11 @@ expect "the model got the question and the paragraph" mock_got $QUESTION "$PARAG
 cw=$(zsh $S/pick.sh kept) || cw=
 [ -n "$cw" ] || { log "FAIL a second pick opens a card"; (( failed++ )); exit 1; }
 zsh $S/ask.sh $cw kept $QUESTION keep || log "(ask.sh keep failed)"
-expect "closing the card mid-task shows a running pill" logged 'pill while running: ["pill run' 6
-expect "the pill turns done" logged 'pill when done: ["pill done' 4
+expect "closing the card mid-task shows a running pill" logged 'pill while running: pill run' 6
+expect "the pill turns done" logged 'pill when done: pill done' 4
 expect "the pill keeps DSH's title" sh -c "tail -4 '$EV/run.log' | grep -q 'pill when done: .*Mock 标题'"
 # The click closes the pill window, so it waits until eval has returned.
-js $(win pill.html) "setTimeout(() => document.querySelector('.pill').click()); return 'ok'" > /dev/null
+js $(win pill.html) "setTimeout(() => [...document.querySelectorAll('.pill:not(.out)')].at(-1).click()); return 'ok'" > /dev/null
 expect "clicking the pill brings the card back" until_true 5 has card.html
 shot_page card.html kept-restored
 exit $(( failed > 0 ))
