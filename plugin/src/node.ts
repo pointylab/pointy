@@ -322,8 +322,9 @@ export function apply(ctx: DshContext) {
   const started = new Set<string>()
   /** Sessions a closed card asked to archive while their turn still ran. */
   const archiving = new Set<string>()
-  /** Sessions a closed card handed back, from the request until DSH archives
-   * them: the session list leaves them out, so a new card never offers one. */
+  /** Sessions a closed card handed back to be archived. The session list
+   * leaves them out from the request on, archived or not yet, as DSH's own
+   * list can still show one for a moment after the archive. */
   const leaving = new Set<string>()
   const archiveTimers = new Set<ReturnType<typeof setTimeout>>()
   let lastLineAt = 0
@@ -684,7 +685,6 @@ export function apply(ctx: DshContext) {
   function forgetSession(sessionId: string) {
     started.delete(sessionId)
     archiving.delete(sessionId)
-    leaving.delete(sessionId)
     titles.delete(sessionId)
     lastState.delete(sessionId)
     if (activeRoot === sessionId) activeRoot = undefined
@@ -699,8 +699,8 @@ export function apply(ctx: DshContext) {
       logger.warn('pointy: this DSH cannot archive a session from a plugin')
       return
     }
-    if (registry.archivedSessionIds?.includes(sessionId)) return forgetSession(sessionId)
     leaving.add(sessionId)
+    if (registry.archivedSessionIds?.includes(sessionId)) return forgetSession(sessionId)
     try {
       await registry.archiveSession(sessionId)
       forgetSession(sessionId)
