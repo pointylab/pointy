@@ -22,6 +22,7 @@ env:
   # wait for an idle user.
   VP_IDLE: '0'
   VP_WAIT: '60'
+  VP_KEEP_RUNS: '20'
 
 jobs:
   windows:

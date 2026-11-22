@@ -4,7 +4,7 @@
 // shows on screen, for tests of Pointy:
 //
 //	drive move X Y                                        move the mouse
-//	drive shake X Y                                       shake it around X, Y
+//	drive shake X Y [AMP]                                 shake it around X, Y (default half-span 60)
 //	drive click X Y [right]                               click there
 //	drive at X Y [PID]                                    the pid owning the top window at X, Y, skipping PID
 //	drive front                                           the foreground window's pid
@@ -131,7 +131,11 @@ func main() {
 	case "move":
 		moveMouse(coord(args, 1), coord(args, 2))
 	case "shake":
-		shakeMouse(coord(args, 1), coord(args, 2))
+		amp := int32(60)
+		if len(args) > 3 {
+			amp = coord(args, 3)
+		}
+		shakeMouse(coord(args, 1), coord(args, 2), amp)
 	case "click":
 		right := false
 		if len(args) > 3 {

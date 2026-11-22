@@ -33,13 +33,17 @@ if ($Dsh) {
 }
 
 New-Item -ItemType Directory -Force $Runs | Out-Null
-# Keeps the evidence of the last two runs besides this one. Older run
-# directories go, unless a process one of them recorded still lives.
-Get-ChildItem $Runs -Directory | Sort-Object Name -Descending | Select-Object -Skip 2 | Where-Object {
+# Keeps the evidence of the last VP_KEEP_RUNS (default 2) runs besides this one.
+# Older run directories go, unless a process one of them recorded still lives.
+$keepRuns = if ($env:VP_KEEP_RUNS) { [int]$env:VP_KEEP_RUNS } else { 2 }
+Get-ChildItem $Runs -Directory | Sort-Object Name -Descending | Select-Object -Skip $keepRuns | Where-Object {
   -not (Get-ChildItem (Join-Path $_.FullName 'pids') -File -ErrorAction SilentlyContinue |
       Where-Object { Get-Process -Id ([int](Get-Content -Raw $_.FullName).Trim()) -ErrorAction SilentlyContinue })
 } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-$env:VP_RUN = Join-Path $Runs (Get-Date -Format 'yyyyMMdd-HHmmss')
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$runDir = Join-Path $Runs $stamp
+if (Test-Path $runDir) { $runDir = Join-Path $Runs "$stamp-$(Get-Date -Format 'fff')" }
+$env:VP_RUN = $runDir
 New-Item -ItemType Directory -Force $env:VP_RUN | Out-Null
 if ($Dsh) { Set-Content -LiteralPath (Join-Path $env:VP_RUN 'dsh') -Value '' -NoNewline }
 $NoRun = $false

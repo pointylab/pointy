@@ -179,11 +179,14 @@ func moveMouse(x, y int32) {
 	sendInputs([]winInput{newMouseInput(dx, dy, mouseeventfMove|mouseeventfAbsolute|mouseeventfVirtualDesk)})
 }
 
-func shakeMouse(x, y int32) {
+func shakeMouse(x, y, amp int32) {
+	if amp <= 0 {
+		amp = 60
+	}
 	for i := range 16 {
-		dx := int32(60)
+		dx := amp
 		if i%2 == 1 {
-			dx = -60
+			dx = -amp
 		}
 		moveMouse(x+dx, y)
 		time.Sleep(25 * time.Millisecond)

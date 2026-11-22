@@ -30,6 +30,7 @@ step() { zsh $S/$1 "${@:2}" || log "($1 ${@:2} failed)"; }
 until_true() { local end=$(( SECONDS + $1 )); shift; while (( SECONDS < end )); do "$@" > /dev/null 2>&1 && return 0; sleep 0.2; done; return 1; }
 logged() { tail -${2:-30} "$EV/run.log" | grep -qF -- "$1"; }
 keys_shown() { [ "$(js $(win notice.html) "return document.getElementById('keys').textContent")" = "$1" ]; }
+keys_not() { [ "$(js $(win notice.html) "return document.getElementById('keys').textContent")" != "$1" ]; }
 no_overlay() { ! has overlay.html; }
 no_notice() { ! has notice.html; }
 is_setting() { [ "$(setting $1)" = "$2" ]; }
@@ -84,4 +85,25 @@ sleep 0.6
 shot $wx $wy $ww $wh custom-pointing
 step keys.sh Esc both
 until_true 5 no_overlay
+
+# 5. A shortcut another app holds: the recorder never sees it, Esc cancels and
+#    keeps ⌘⌥K, and choosing that preset in the tray logs that it is taken.
+"$BIN/drive" hold Cmd+Shift+Space "$VP_RUN/holder.out" 300 > "$VP_RUN/holder.log" 2>&1 &
+holder=$!
+print $holder > "$VP_RUN/pids/holder"
+expect "another process holds Cmd+Shift+Space" until_true 10 grep -q held "$VP_RUN/holder.out"
+step tray.sh custom-taken "$HOTKEY" "$CUSTOM"
+expect "the recorder opens again" until_true 5 has notice.html
+sleep 0.5
+step keys.sh Cmd+Shift+Space pointy
+sleep 0.3
+expect "the recorder does not see a chord another app holds" keys_not ⌘⇧Space
+shot_page notice.html custom-taken
+step keys.sh Esc pointy
+expect "Esc cancels the recorder" until_true 5 no_notice
+expect "cancelling keeps Cmd+Alt+K" until_true 3 is_setting hotkey Cmd+Alt+K
+step tray.sh preset-taken "$HOTKEY" ⌘⇧Space
+sleep 0.5
+expect "Pointy logs that CmdOrCtrl+Shift+Space is taken" grep -q 'cannot register.*CmdOrCtrl+Shift+Space' "$VP_RUN/home/.pointy/error.log"
+kill $holder 2>/dev/null || true
 exit $(( failed > 0 ))

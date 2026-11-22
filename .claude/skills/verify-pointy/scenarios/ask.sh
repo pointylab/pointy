@@ -26,6 +26,7 @@ expect() { local what=$1; shift; if "$@" > /dev/null 2>&1; then log "PASS $what"
 until_true() { local end=$(( SECONDS + $1 )); shift; while (( SECONDS < end )); do "$@" > /dev/null 2>&1 && return 0; sleep 0.2; done; return 1; }
 no_card() { ! has card.html; }
 logged() { tail -${2:-30} "$EV/run.log" | grep -qF -- "$1"; }
+contains() { [[ "$1" == *"$2"* ]]; }
 page_has() { js $1 "if (!document.getElementById('$2').innerText.includes($(print -r -- "$3" | node -e 'process.stdout.write(JSON.stringify(require("fs").readFileSync(0, "utf8").trim()))'))) throw 'no'"; }
 mock_got() { python3 -c 'import json,sys
 for line in open(sys.argv[1]):
@@ -68,4 +69,26 @@ js $(win pill.html) "setTimeout(() => [...document.querySelectorAll('.pill:not(.
 expect "clicking the pill brings the card back" until_true 5 has card.html
 sleep 0.6  # the card fades in
 shot_page card.html kept-restored
+
+# 4. Turning auto-archive off keeps the session when its card closes, so
+#    the next pick on the same document offers to continue it.
+auto_label=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["tray"].get("autoArchive", ""))' "$SRC/locales/zh-CN.json")
+if [ -n "$auto_label" ]; then
+  zsh $S/tray.sh archive-off "$auto_label" || log "(tray.sh archive-off failed)"
+  expect "autoArchive is saved as false in settings.json" until_true 3 sh -c "[ \"\$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get(\"autoArchive\"))' '$VP_RUN/home/.pointy/settings.json')\" = False ]"
+  zsh $S/tray.sh archive-off-checked || log "(tray.sh archive-off-checked failed)"
+  expect "the tray unchecks auto-archive" logged "[ ] $auto_label" 20
+  cw=$(win card.html)
+  js $cw "setTimeout(() => document.getElementById('close').click()); return 'closed'" > /dev/null
+  until_true 5 no_card || log "(the restored card stayed open)"
+  sleep 1
+  cw=$(zsh $S/pick.sh archive-off) || cw=
+  expect "a pick after turning auto-archive off opens a card" test -n "$cw"
+  if [ -n "$cw" ]; then
+    expect "closing with auto-archive off keeps the session to continue" js $cw "if (document.getElementById('new-task').hidden) throw 'still new task'"
+    lbl=$(js $cw "return document.getElementById('target-label').textContent")
+    log "third card target: $lbl"
+    expect "the card offers to continue Mock 标题" contains "$lbl" "接着：Mock 标题"
+  fi
+fi
 exit $(( failed > 0 ))

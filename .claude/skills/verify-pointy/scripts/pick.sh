@@ -5,21 +5,10 @@
 set -u
 source ${0:A:h}/env.sh
 name=$1
-doc=$VP_RUN/fixture-$name.txt
-cp "$SKILL/fixture.txt" "$doc"
-# One fixture at a time: TextEdit would open the next as a tab of this one.
-for old in $(cat "$VP_RUN/fixtures" 2>/dev/null); do
-  close_doc "$old"
-done
-print -r -- "${doc:A}" >> "$VP_RUN/fixtures"
-# Opening activates TextEdit, so it waits for an idle user like the mouse does.
-guard
-open -a TextEdit "$doc"
-te=$(pgrep -nx TextEdit)
-wait_until 10 "the fixture window" osascript -e "tell application \"System Events\" to tell process \"TextEdit\" to get position of window \"${doc:t}\""
-IFS=', ' read wx wy ww wh <<< "$(osascript -e "tell application \"System Events\" to tell process \"TextEdit\" to get {position, size} of window \"${doc:t}\"")"
+# Use the run's single fixture document so repeated picks share the same pageKey
+# and TextEdit never opens a second document as a tab.
+read te wx wy ww wh <<< "$(zsh ${0:A:h}/fixture.sh)"
 X=$(( wx + 200 )) Y=$(( wy + 50 ))
-# TextEdit lists the window before it comes to the front.
 wait_until 5 "the fixture window on top" sh -c "[ \"\$($BIN/drive at $X $Y)\" = $te ]"
 
 for x in $(( X - 70 )) $X $(( X + 70 )); do mine $x $Y $te; done

@@ -4,8 +4,15 @@
 # builds. $VP_RUN/evidence stays, with Pointy's settings.json and error.log.
 set -u
 source ${0:A:h}/env.sh
-for p in dsh pointy mock; do
+# Stop DSH before Pointy so the plugin does not try to respawn Pointy as its peer exits.
+pid_names=(dsh)
+for f in "$VP_RUN"/pids/*(N); do
+  n=${f:t}
+  [[ $n == dsh ]] || pid_names+=($n)
+done
+for p in $pid_names; do
   root=$(pid $p) || continue
+  [ -n "$root" ] || continue
   all=($(tree $root))
   kill $all 2>/dev/null
   sleep 1

@@ -4,9 +4,11 @@
 // and accessibility see, for tests of pointing:
 //
 //	drive move X Y            move the mouse
-//	drive shake X Y           shake it around X, Y
+//	drive shake X Y [AMP]     shake it around X, Y (default half-span 60)
 //	drive click X Y [right]   click there
 //	drive listen SECS X Y     count the clicks at X, Y that reach apps (a tail tap)
+//	drive hold COMBO FILE [SECS]
+//	                          register COMBO exclusively via Carbon, write "held" to FILE, and hold it
 //	drive cursor              the cursor seed and the hot spot shown
 //	drive front               the frontmost app's pid
 //	drive at X Y [PID]        the pid owning the top window at X, Y, skipping PID
@@ -88,6 +90,23 @@ var (
 	axCreateApplication     func(pid int32) uintptr
 	axCopyAttribute         func(el, attr uintptr, out *uintptr) int32
 	axValueGetValue         func(v uintptr, typ int32, out unsafe.Pointer) bool
+	getAppEventTarget       func() uintptr
+	registerEventHotKey     func(keyCode, modifiers uint32, hotKeyID eventHotKeyID, target uintptr, options uint32, outRef *uintptr) int32
+	unregisterEventHotKey   func(ref uintptr) int32
+)
+
+type eventHotKeyID struct {
+	Signature uint32
+	ID        uint32
+}
+
+const (
+	carbonCmd             = 1 << 8
+	carbonShift           = 1 << 9
+	carbonOption          = 1 << 11
+	carbonControl         = 1 << 12
+	kEventHotKeyExclusive = 1 << 1
+	holdHotKeySignature   = 0x5650484B // 'VPHK'
 )
 
 func load() {
@@ -102,9 +121,13 @@ func load() {
 	cf := open("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
 	open("/System/Library/Frameworks/AppKit.framework/AppKit")
 	as := open("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")
+	carbon := open("/System/Library/Frameworks/Carbon.framework/Carbon")
 	purego.RegisterLibFunc(&axCreateApplication, as, "AXUIElementCreateApplication")
 	purego.RegisterLibFunc(&axCopyAttribute, as, "AXUIElementCopyAttributeValue")
 	purego.RegisterLibFunc(&axValueGetValue, as, "AXValueGetValue")
+	purego.RegisterLibFunc(&getAppEventTarget, carbon, "GetApplicationEventTarget")
+	purego.RegisterLibFunc(&registerEventHotKey, carbon, "RegisterEventHotKey")
+	purego.RegisterLibFunc(&unregisterEventHotKey, carbon, "UnregisterEventHotKey")
 	purego.RegisterLibFunc(&cgEventCreateMouseEvent, cg, "CGEventCreateMouseEvent")
 	purego.RegisterLibFunc(&cgEventPost, cg, "CGEventPost")
 	purego.RegisterLibFunc(&cgEventCreateKeyboard, cg, "CGEventCreateKeyboardEvent")
@@ -136,11 +159,14 @@ func post(typ uint32, p point, button uint32) {
 	cfRelease(e)
 }
 
-func shake(at point) {
+func shake(at point, amp float64) {
+	if amp <= 0 {
+		amp = 60
+	}
 	for i := range 16 {
-		dx := 60.0
+		dx := amp
 		if i%2 == 1 {
-			dx = -60
+			dx = -amp
 		}
 		post(eventMoved, point{at.X + dx, at.Y}, 0)
 		time.Sleep(25 * time.Millisecond)
@@ -239,6 +265,50 @@ func press(combo string) {
 	for i := len(mods) - 1; i >= 0; i-- {
 		flags &^= mods[i].flag
 		postKey(mods[i].code, false, flags)
+	}
+}
+
+// hold registers combo exclusively as a Carbon global hotkey, writes "held" to
+// readyFile, and runs the event loop until seconds elapse so another app sees
+// the shortcut as taken.
+func hold(combo, readyFile string, seconds float64) {
+	parts := strings.Split(combo, "+")
+	code, ok := keyCodes[parts[len(parts)-1]]
+	if !ok {
+		fail("unknown key " + parts[len(parts)-1])
+	}
+	var mods uint32
+	for _, m := range parts[:len(parts)-1] {
+		switch m {
+		case "Cmd", "Command":
+			mods |= carbonCmd
+		case "Shift":
+			mods |= carbonShift
+		case "Alt", "Option":
+			mods |= carbonOption
+		case "Ctrl", "Control":
+			mods |= carbonControl
+		default:
+			fail("unknown modifier " + m)
+		}
+	}
+	class("NSApplication").Send(sel("sharedApplication"))
+	var ref uintptr
+	id := eventHotKeyID{Signature: holdHotKeySignature, ID: 1}
+	if st := registerEventHotKey(uint32(code), mods, id, getAppEventTarget(), kEventHotKeyExclusive, &ref); st != 0 {
+		fail(fmt.Sprintf("RegisterEventHotKey %s failed (%d)", combo, st))
+	}
+	defer unregisterEventHotKey(ref)
+	if err := os.WriteFile(readyFile, []byte("held\n"), 0o644); err != nil {
+		fail(err.Error())
+	}
+	deadline := time.Now().Add(time.Duration(seconds * float64(time.Second)))
+	for time.Now().Before(deadline) {
+		rem := time.Until(deadline).Seconds()
+		if rem > 0.5 {
+			rem = 0.5
+		}
+		cfRunLoopRunInMode(kCFRunLoopDefaultMode, rem, false)
 	}
 }
 
@@ -550,13 +620,26 @@ func main() {
 	load()
 	args := os.Args[1:]
 	if len(args) == 0 {
-		fail("usage: drive move|shake|click|keys|listen|cursor|front|chain|at|windows|extras|menus|displays|idle|locked")
+		fail("usage: drive move|shake|click|keys|listen|hold|cursor|front|chain|at|windows|extras|menus|displays|idle|locked")
 	}
 	switch args[0] {
 	case "move":
 		injecting(func() { post(eventMoved, point{num(args, 1), num(args, 2)}, 0) })
 	case "shake":
-		injecting(func() { shake(point{num(args, 1), num(args, 2)}) })
+		amp := 60.0
+		if len(args) > 3 {
+			amp = num(args, 3)
+		}
+		injecting(func() { shake(point{num(args, 1), num(args, 2)}, amp) })
+	case "hold":
+		if len(args) < 3 {
+			fail("usage: drive hold COMBO READY_FILE [SECS]")
+		}
+		secs := 300.0
+		if len(args) > 3 {
+			secs = num(args, 3)
+		}
+		hold(args[1], args[2], secs)
 	case "click":
 		injecting(func() { click(point{num(args, 1), num(args, 2)}, len(args) > 3 && args[3] == "right") })
 	case "keys":

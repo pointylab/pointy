@@ -141,15 +141,21 @@ Pa eval --window $e "return window.mygo.call('E2E.ChooseTray', ['Do Not Disturb'
 ```powershell
 pwsh -NoProfile -File .claude/skills/verify-pointy/scenarios/ask.ps1 [-Repo <checkout>] [-Keep]
 pwsh -NoProfile -File .claude/skills/verify-pointy/scenarios/hotkey.ps1 [-Repo <checkout>] [-Keep]
+pwsh -NoProfile -File .claude/skills/verify-pointy/scenarios/language.ps1 [-Repo <checkout>] [-Keep]
+pwsh -NoProfile -File .claude/skills/verify-pointy/scenarios/dnd.ps1 [-Repo <checkout>] [-Keep]
+pwsh -NoProfile -File .claude/skills/verify-pointy/scenarios/shake.ps1 [-Repo <checkout>] [-Keep]
 ```
 
-`ask.ps1` drives the full flow against DSH and the mock model (pick, ask in full mode, keep as a pill and restore) and prints `SKIP` when `dsh` is not installed. `-Keep` leaves the run up for a look; run `down.ps1` after.
+`ask.ps1` drives the full flow against DSH and the mock model (pick, ask in full mode, keep as a pill and restore, and turn off auto-archive to continue the session) and prints `SKIP` when `dsh` is not installed. `-Keep` leaves the run up for a look; run `down.ps1` after.
 
-The macOS half has the same scenarios (`ask.sh`, `hotkey.sh`), run from Terminal or over SSH once the terminal (or `sshd-keygen-wrapper`) has Accessibility:
+The macOS half has the same scenarios (`ask.sh`, `hotkey.sh`, `language.sh`, `dnd.sh`, `shake.sh`), run from Terminal or over SSH once the terminal (or `sshd-keygen-wrapper`) has Accessibility:
 
 ```sh
 zsh .claude/skills/verify-pointy/scenarios/ask.sh [<checkout>] [keep]
 zsh .claude/skills/verify-pointy/scenarios/hotkey.sh [<checkout>] [keep]
+zsh .claude/skills/verify-pointy/scenarios/language.sh [<checkout>] [keep]
+zsh .claude/skills/verify-pointy/scenarios/dnd.sh [<checkout>] [keep]
+zsh .claude/skills/verify-pointy/scenarios/shake.sh [<checkout>] [keep]
 ```
 
 A scenario prints `SKIP` and exits 0 when the checkout lacks its feature. The Verify workflow (`.github/workflows/verify.yml`) runs every scenario on `windows-latest` and `macos-latest` for each pull request, with `VP_IDLE=0` since nobody uses a runner, installs the latest DSH (cached under the key Desktop test uses) for `ask`, and uploads the evidence. Run it by hand with a `ref` to test another branch with the current scenarios. Both runners grant Accessibility and Screen Recording.

@@ -108,6 +108,38 @@ try {
       }
       Start-Sleep -Milliseconds 600  # the card fades in
       Shot-Page 'card.html' 'kept-restored'
+
+      # 4. Turning auto-archive off keeps the session when its card closes, so
+      #    the next pick on the same window offers to continue it.
+      $src = if ($Repo) { $Repo } elseif ($env:VP_REPO) { $env:VP_REPO } else { (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path }
+      $t = (Get-Content -Raw (Join-Path $src 'locales\zh-CN.json') | ConvertFrom-Json).tray
+      if ($t.PSObject.Properties['autoArchive']) {
+        $autoLabel = $t.autoArchive
+        & (Join-Path $s 'tray.ps1') 'archive-off' $autoLabel
+        Expect 'autoArchive is saved as false in settings.json' { (Read-Settings).autoArchive -eq $false }
+        & (Join-Path $s 'tray.ps1') 'archive-off-checked'
+        Expect 'the tray unchecks auto-archive' {
+          [bool](Get-Content -LiteralPath (Join-Path $EV 'run.log') -Tail 20 -Encoding utf8 |
+              Where-Object { $_.Contains("[ ] $autoLabel") })
+        }
+        $cw = Win-Of 'card.html'
+        Js $cw 'setTimeout(() => document.getElementById("close").click()); return "closed"' | Out-Null
+        $end = (Get-Date).AddSeconds(5)
+        while ((Has-Page 'card.html') -and (Get-Date) -lt $end) { Start-Sleep -Milliseconds 200 }
+        Start-Sleep -Seconds 1
+        $cw = $null
+        try { $cw = & (Join-Path $s 'pick.ps1') 'archive-off' | Select-Object -Last 1 } catch {}
+        Expect 'a pick after turning auto-archive off opens a card' { [bool]$cw }
+        if ($cw) {
+          Expect 'closing with auto-archive off keeps the session to continue' {
+            Js $cw 'if (document.getElementById("new-task").hidden) throw "still new task"' | Out-Null
+            $true
+          }
+          $lbl = Js $cw 'return document.getElementById("target-label").textContent'
+          Log "third card target: $lbl"
+          Expect 'the card offers to continue Mock 标题' { $lbl.Contains('接着：') -and $lbl.Contains('Mock 标题') }
+        }
+      }
     }
   }
 } catch {
