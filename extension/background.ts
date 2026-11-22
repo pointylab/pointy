@@ -35,6 +35,10 @@ async function hmac(token: string, data: string) {
 
 const randomHex = () => hex(crypto.getRandomValues(new Uint8Array(16)))
 
+async function getInstallType(): Promise<string> {
+  try { return (await chrome.management?.getSelf?.())?.installType ?? '' } catch { return '' }
+}
+
 async function connect() {
   if (ws && ws.readyState <= WebSocket.OPEN) return
   const { id, token } = await chrome.storage.local.get<Stored>(['id', 'token'])
@@ -46,7 +50,7 @@ async function connect() {
   sock.onmessage = async (ev) => {
     const msg: PetMessage = JSON.parse(ev.data)
     if (msg.type === 'challenge') {
-      sock.send(JSON.stringify({ type: 'hello', role: 'extension', id, browser: BROWSER, version: chrome.runtime.getManifest().version, nonce, proof: await hmac(token, `ext|${msg.nonce}`) }))
+      sock.send(JSON.stringify({ type: 'hello', role: 'extension', id, browser: BROWSER, version: chrome.runtime.getManifest().version, installType: await getInstallType(), nonce, proof: await hmac(token, `ext|${msg.nonce}`) }))
     } else if (msg.type === 'hello-ok') {
       if (msg.proof !== await hmac(token, `pet|${nonce}`)) return sock.close()
       authed = true
@@ -59,7 +63,7 @@ async function connect() {
     } else if (authed && msg.type === 'focus-tab') {
       focusTab(msg.origin)
     } else if (authed && msg.type === 'reload') {
-      chrome.runtime.reload()
+      if (await getInstallType() === 'development') chrome.runtime.reload()
     } else if (authed && msg.type === 'pick-release') {
       const tabId = heldTabs.get(msg.reqId)
       heldTabs.delete(msg.reqId)

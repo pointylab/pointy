@@ -1,8 +1,17 @@
 package browser
 
 import (
+	"context"
+	"encoding/json/v2"
+	"errors"
+	"net"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/coder/websocket"
+	"github.com/pointylab/pointy/desktop/internal/config"
 	"github.com/pointylab/pointy/desktop/internal/contract"
 	"github.com/pointylab/pointy/desktop/internal/i18n"
 	"github.com/pointylab/pointy/desktop/internal/server"
@@ -63,5 +72,93 @@ func TestPickCancelCarriesThePagesBlockReason(t *testing.T) {
 		}
 	default:
 		t.Fatal("the cancel did not reach the pick")
+	}
+}
+
+func TestAuthenticateReloadsOnlyUnpackedExtensions(t *testing.T) {
+	home := t.TempDir()
+	bundled := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bundled, "manifest.json"), []byte(`{"version":"0.4.3"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SaveExtensionToken(home, "ext-1", "secret-token"); err != nil {
+		t.Fatal(err)
+	}
+	e := New(Deps{Home: home, BundledDir: bundled})
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go server.Serve(ln, server.Routes{Extension: e.Authenticate})
+
+	connect := func(installType string) *websocket.Conn {
+		t.Helper()
+		ws, _, err := websocket.Dial(context.Background(), "ws://"+ln.Addr().String(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { ws.CloseNow() })
+		readMsg := func(timeout time.Duration) (map[string]any, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			defer cancel()
+			_, data, err := ws.Read(ctx)
+			if err != nil {
+				return nil, err
+			}
+			var m map[string]any
+			if err := json.Unmarshal(data, &m); err != nil {
+				return nil, err
+			}
+			return m, nil
+		}
+		ch, err := readMsg(2 * time.Second)
+		if err != nil || ch["type"] != "challenge" {
+			t.Fatalf("challenge %v err=%v", ch, err)
+		}
+		nonce, _ := ch["nonce"].(string)
+		hello, _ := json.Marshal(map[string]any{
+			"type":        "hello",
+			"role":        "extension",
+			"id":          "ext-1",
+			"browser":     "chrome",
+			"version":     "0.4.2",
+			"installType": installType,
+			"nonce":       "client-nonce",
+			"proof":       server.Sign("secret-token", "ext|"+nonce),
+		})
+		if err := ws.Write(context.Background(), websocket.MessageText, hello); err != nil {
+			t.Fatal(err)
+		}
+		ok, err := readMsg(2 * time.Second)
+		if err != nil || ok["type"] != "hello-ok" {
+			t.Fatalf("hello-ok %v err=%v", ok, err)
+		}
+		return ws
+	}
+
+	for _, installType := range []string{"development", ""} {
+		ws := connect(installType)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_, data, err := ws.Read(ctx)
+		cancel()
+		if err != nil {
+			t.Fatalf("installType=%q: expected reload, got err=%v", installType, err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(data, &m); err != nil || m["type"] != "reload" {
+			t.Fatalf("installType=%q: got %v err=%v, want reload", installType, m, err)
+		}
+	}
+
+	ws := connect("normal")
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	_, data, err := ws.Read(ctx)
+	cancel()
+	if err == nil {
+		t.Fatalf("installType=normal: unexpected message %s", string(data))
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("installType=normal: read err=%v, want deadline exceeded", err)
 	}
 }

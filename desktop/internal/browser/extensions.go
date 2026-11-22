@@ -116,7 +116,8 @@ func (e *Extensions) Authenticate(c *server.Conn, hello server.Hello, nonce stri
 		old.conn.Close()
 	}
 	e.changed()
-	if v := manifestVersion(e.deps.BundledDir); v != "" && hello.Version != "" && hello.Version != v {
+	unpacked := hello.InstallType == "" || hello.InstallType == "development"
+	if v := manifestVersion(e.deps.BundledDir); unpacked && v != "" && hello.Version != "" && hello.Version != v {
 		c.Send(map[string]string{"type": "reload"})
 	}
 	return &handler{e: e, id: hello.ID, conn: c}

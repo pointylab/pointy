@@ -73,14 +73,15 @@ func (c *Conn) Closed() <-chan struct{} { return c.closed }
 
 // Hello is the handshake message of a peer.
 type Hello struct {
-	Type    string `json:"type"`
-	Role    string `json:"role"`
-	Nonce   string `json:"nonce"`
-	Proof   string `json:"proof"`
-	ID      string `json:"id"`
-	Browser string `json:"browser"`
-	Version string `json:"version"`
-	Manual  bool   `json:"manual"`
+	Type        string `json:"type"`
+	Role        string `json:"role"`
+	Nonce       string `json:"nonce"`
+	Proof       string `json:"proof"`
+	ID          string `json:"id"`
+	Browser     string `json:"browser"`
+	Version     string `json:"version"`
+	InstallType string `json:"installType"`
+	Manual      bool   `json:"manual"`
 }
 
 // Routes says who handles a connection once it introduced itself.
