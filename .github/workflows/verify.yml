@@ -16,6 +16,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: verify-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   TARGET_REF: ${{ inputs.ref }}
   # Runners are disposable and nobody uses them, so the scenarios need not
@@ -95,6 +99,7 @@ jobs:
         with:
           name: verify-windows
           path: ${{ runner.temp }}/verify-pointy/*/evidence/
+          retention-days: 14
           if-no-files-found: ignore
 
   macos:
@@ -174,4 +179,5 @@ jobs:
           path: |
             /private/tmp/verify-pointy.*/evidence/
             /private/tmp/verify-pointy-*-screen.png
+          retention-days: 14
           if-no-files-found: ignore
