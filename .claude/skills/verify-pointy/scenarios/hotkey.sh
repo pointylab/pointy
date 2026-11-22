@@ -37,7 +37,7 @@ is_setting() { [ "$(setting $1)" = "$2" ]; }
 front_is() { [ "$(drive front)" = "$1" ]; }
 
 t() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["tray"][sys.argv[2]])' "$SRC/locales/zh-CN.json" $1; }
-HOTKEY=$(t hotkey) CUSTOM=$(t hotkeyCustom)
+HOTKEY=$(t hotkey) OFF=$(t hotkeyOff) CUSTOM=$(t hotkeyCustom)
 pointy=$(pid pointy)
 
 # 1. A preset from the tray is saved and bound.
@@ -86,8 +86,11 @@ shot $wx $wy $ww $wh custom-pointing
 step keys.sh Esc both
 until_true 5 no_overlay
 
-# 5. A shortcut another app holds: the recorder never sees it, Esc cancels and
-#    keeps ⌘⌥K, and choosing that preset in the tray logs that it is taken.
+# 5. A shortcut another app holds: the recorder never sees it, and Esc cancels
+#    without overwriting ⌘⌥K. Unlike Windows RegisterHotKey, macOS Carbon's
+#    RegisterEventHotKey (with options=0, as mygo calls it) does not return an
+#    error when another app also registered the chord, so conflict rejection on
+#    preset selection is only checked on Windows.
 "$BIN/drive" hold Cmd+Shift+Space "$VP_RUN/holder.out" 300 > "$VP_RUN/holder.log" 2>&1 &
 holder=$!
 print $holder > "$VP_RUN/pids/holder"
@@ -103,8 +106,16 @@ shot_page notice.html custom-taken
 step keys.sh Esc pointy
 expect "Esc cancels the recorder" until_true 5 no_notice
 expect "cancelling keeps Cmd+Alt+K" until_true 3 is_setting hotkey Cmd+Alt+K
-step tray.sh preset-taken "$HOTKEY" ⌘⇧Space
-sleep 0.5
-expect "Pointy logs that CmdOrCtrl+Shift+Space is taken" grep -q 'cannot register.*CmdOrCtrl+Shift+Space' "$VP_RUN/home/.pointy/error.log"
 kill $holder 2>/dev/null || true
+
+# 6. Turning the shortcut off clears settings.json and unregisters ⌘⌥K.
+step tray.sh off "$HOTKEY" "$OFF"
+expect "turning off clears hotkey in settings.json" until_true 3 is_setting hotkey ""
+step tray.sh off-checked "$HOTKEY"
+expect "the tray checks Off" logged "[x] $OFF"
+zsh $S/fixture.sh > /dev/null
+guard; mine $cx $cy $te; drive move $cx $cy
+step keys.sh Cmd+Alt+K fixture
+sleep 1.2
+expect "⌘⌥K no longer starts pointing once off" no_overlay
 exit $(( failed > 0 ))

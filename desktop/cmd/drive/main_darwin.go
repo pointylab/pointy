@@ -8,7 +8,7 @@
 //	drive click X Y [right]   click there
 //	drive listen SECS X Y     count the clicks at X, Y that reach apps (a tail tap)
 //	drive hold COMBO FILE [SECS]
-//	                          register COMBO exclusively via Carbon, write "held" to FILE, and hold it
+//	                          register COMBO via Carbon, write "held" to FILE, and hold it
 //	drive cursor              the cursor seed and the hot spot shown
 //	drive front               the frontmost app's pid
 //	drive at X Y [PID]        the pid owning the top window at X, Y, skipping PID
@@ -101,12 +101,11 @@ type eventHotKeyID struct {
 }
 
 const (
-	carbonCmd             = 1 << 8
-	carbonShift           = 1 << 9
-	carbonOption          = 1 << 11
-	carbonControl         = 1 << 12
-	kEventHotKeyExclusive = 1 << 0
-	holdHotKeySignature   = 0x5650484B // 'VPHK'
+	carbonCmd           = 1 << 8
+	carbonShift         = 1 << 9
+	carbonOption        = 1 << 11
+	carbonControl       = 1 << 12
+	holdHotKeySignature = 0x5650484B // 'VPHK'
 )
 
 func load() {
@@ -268,9 +267,9 @@ func press(combo string) {
 	}
 }
 
-// hold registers combo exclusively as a Carbon global hotkey, writes "held" to
-// readyFile, and runs the event loop until seconds elapse so another app sees
-// the shortcut as taken.
+// hold registers combo as a Carbon global hotkey (the same way another macOS
+// app does), writes "held" to readyFile, and runs the event loop until seconds
+// elapse so the chord is intercepted before reaching the foreground window.
 func hold(combo, readyFile string, seconds float64) {
 	parts := strings.Split(combo, "+")
 	code, ok := keyCodes[parts[len(parts)-1]]
@@ -296,7 +295,7 @@ func hold(combo, readyFile string, seconds float64) {
 	app.Send(sel("setActivationPolicy:"), 2) // NSApplicationActivationPolicyProhibited
 	var ref uintptr
 	id := eventHotKeyID{Signature: holdHotKeySignature, ID: 1}
-	if st := registerEventHotKey(uint32(code), mods, id, getAppEventTarget(), kEventHotKeyExclusive, &ref); st != 0 {
+	if st := registerEventHotKey(uint32(code), mods, id, getAppEventTarget(), 0, &ref); st != 0 {
 		fail(fmt.Sprintf("RegisterEventHotKey %s failed (%d)", combo, st))
 	}
 	defer unregisterEventHotKey(ref)

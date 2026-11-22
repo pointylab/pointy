@@ -72,7 +72,7 @@ notice_text=$(js $nw "return document.getElementById('box').innerText")
 log "English notice text: $(print -r -- "$notice_text" | tr '\n' ' ')"
 expect "the notice shows English welcome title" contains "$notice_text" "$EN_WELCOME"
 expect "the notice shows English welcome body" contains "$notice_text" "Shake the mouse"
-js $nw "setTimeout(() => document.getElementById('x').click()); return 'ok'" > /dev/null
+js $nw "setTimeout(() => document.getElementById('x').click(), 50); return 'ok'" > /dev/null 2>&1
 expect "the notice closes" until_true 5 no_notice
 
 # 5. Switch back to Chinese.
