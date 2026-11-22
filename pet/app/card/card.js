@@ -1011,15 +1011,17 @@ function keepAsPill() {
 function dismiss() {
     if (sessionId !== undefined && !finished && status.className !== 'error')
         keepAsPill();
+    // A session whose answer failed stays: it is what the user opens to see
+    // what went wrong.
     else
-        window.card.close();
+        window.card.close(status.className === 'error' ? undefined : sessionId);
 }
 $('close').addEventListener('click', dismiss);
 window.card.onSetAside(() => {
     if (sessionId !== undefined)
         keepAsPill();
     else
-        window.card.close();
+        window.card.close(sessionId);
 });
 window.card.onRestore(() => {
     const el = $('card');

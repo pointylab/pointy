@@ -7,8 +7,13 @@ export const Card = {
     asked() {
         return call("Card.Asked");
     },
-    close() {
-        return call("Card.Close");
+    /**
+     * Close closes the card. sessionID is the session it asked into, if any:
+     * closing a card that started a session archives it, so the question does
+     * not leave a session behind in DSH.
+     */
+    close(sessionID) {
+        return call("Card.Close", sessionID);
     },
     copy(text) {
         return call("Card.Copy", text);
@@ -93,6 +98,13 @@ export const Notice = {
     },
     resize(height) {
         return call("Notice.Resize", height);
+    },
+    /**
+     * SaveHotkey binds acc and writes it to Settings, closing the notice on
+     * success and returning the message to show when binding fails.
+     */
+    saveHotkey(acc) {
+        return call("Notice.SaveHotkey", acc);
     },
 };
 /** Intro is window.intro. */

@@ -6,7 +6,7 @@ window.card = {
     },
     onAgent: (fn) => { goEvents.agent.on((msg) => fn(msg)); },
     send: (msg) => goCard.send(msg),
-    close: () => { goCard.close(); },
+    close: (sessionId) => { goCard.close(sessionId ?? ''); },
     openAgent: (sessionId) => { goCard.openAgent(sessionId ?? ''); },
     copy: (text) => { goCard.copy(text); },
     resize: (height) => { goCard.resize(height); },

@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
   <style>
-    :root { color-scheme: light dark; --bg: #fff; --text: #1f2328; --muted: #6e7781; --line: #e6e8eb; --chip: #f2f3f5; --chip-hover: #e8eaed; --blue: #4d6bfe; --blue-hover: #3f5ce8;
+    :root { color-scheme: light dark; --bg: #fff; --text: #1f2328; --muted: #6e7781; --line: #e6e8eb; --chip: #f2f3f5; --chip-hover: #e8eaed; --blue: #4d6bfe; --blue-hover: #3f5ce8; --error: #cf222e;
       --shadow: 0 3px 12px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.05), 0 0 0 1px rgba(15, 23, 42, 0.05); }
     @media (prefers-color-scheme: dark) {
-      :root { --bg: #23252a; --text: #e6e8eb; --muted: #a0a7b1; --line: #34373d; --chip: #2f3237; --chip-hover: #3a3d43; --blue: #6b84ff; --blue-hover: #8096ff;
+      :root { --bg: #23252a; --text: #e6e8eb; --muted: #a0a7b1; --line: #34373d; --chip: #2f3237; --chip-hover: #3a3d43; --blue: #6b84ff; --blue-hover: #8096ff; --error: #ff7b72;
         --shadow: 0 3px 12px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.06); }
     }
     [hidden] { display: none !important; }
@@ -23,6 +23,11 @@
     button.b:hover { background: var(--chip-hover); }
     button.b.primary { background: var(--blue); color: #fff; }
     button.b.primary:hover { background: var(--blue-hover); }
+    button.b:disabled { opacity: 0.45; cursor: default; pointer-events: none; }
+    #record { margin: 10px 0 4px; }
+    #keys { display: flex; align-items: center; justify-content: center; min-height: 40px; padding: 6px 12px; border: 1.5px solid var(--blue); border-radius: 8px; background: var(--chip); font: 600 15px Consolas, "Cascadia Mono", "SF Pro Text", system-ui, sans-serif; color: var(--text); user-select: none; outline: none; }
+    #keys.empty { color: var(--muted); font-weight: 400; font-size: 13.5px; }
+    #record-err { margin: 6px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--error); }
     .copies { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px; }
     button.copy { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px 4px 10px; background: var(--bg); color: var(--text); font: inherit; cursor: pointer; }
     button.copy:hover { background: var(--chip); }
@@ -36,6 +41,10 @@
     <button id="x" title="关闭">✕</button>
     <h1 id="title"></h1>
     <div id="body"></div>
+    <div id="record" hidden>
+      <div id="keys" tabindex="0"></div>
+      <p id="record-err" hidden></p>
+    </div>
     <div id="buttons"></div>
   </div>
   <script type="module" src="notice.js"></script>

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm';
 import { activityOf } from './activity.js';
 import { composeAsk, composeFirst, isOurPreamble } from './compose.js';
-import { APP_DIR, cleanOldApps, MAX_REPLACE_ATTEMPTS, peerAction, petLaunch, PLUGIN_ROOT } from './runtime.js';
+import { APP_DIR, cleanOldApps, MAX_REPLACE_ATTEMPTS, peerAction, petLaunch, PLUGIN_ROOT, readyMessage } from './runtime.js';
 export const name = 'pointy';
 export const inject = ['llm', 'agents'];
 const PORT = Number(process.env.POINTY_PORT) || 47321;
@@ -27,6 +27,9 @@ const RPC_CHANNEL = '/pointy';
 const FOCUS_POLL_MS = 20_000;
 const FOCUS_PENDING_MS = 8_000;
 const MAX_DROPPED_FILES = 20;
+/** A session still working when its card closes is retried this often, this many times. */
+const ARCHIVE_RETRY_MS = 3_000;
+const ARCHIVE_TRIES = 4;
 /** Desktop DSH runs plugins through dsh-desktop-host/lib/index.js; the web UI (`dsh <profile>`) goes through lib/cli.js. */
 const DESKTOP = process.argv.some((a) => /dsh-desktop-host[\\/]lib[\\/]index\.js$/.test(a));
 const PLUGIN_VERSION = (() => {
@@ -104,7 +107,8 @@ function launchPet(logger) {
         launch = petLaunch(logger, PET_LOG, PLUGIN_VERSION);
     }
     catch (error) {
-        return logger.warn(`pointy: cannot start Pointy: ${error.message}`);
+        logger.warn(`pointy: cannot start Pointy: ${error.message}`);
+        return false;
     }
     logger.info(`pointy: starting Pointy: ${launch.exe} ${launch.args.join(' ')}`);
     // DSH desktop runs plugins in Electron's node mode; apps Pointy opens must not inherit that.
@@ -126,9 +130,11 @@ function launchPet(logger) {
         child.unref();
         if (process.platform === 'win32')
             cleanOldApps(APP_DIR, PLUGIN_VERSION);
+        return true;
     }
     catch (error) {
         logger.warn(`pointy: failed to start Pointy: ${error.message}`);
+        return false;
     }
 }
 class PetLink {
@@ -227,7 +233,7 @@ class PetLink {
                     this.logger.warn(`pointy: could not replace Pointy ${typeof msg.version === 'string' ? msg.version : 'unknown'} after ${MAX_REPLACE_ATTEMPTS} attempts; using it as is`);
                 }
                 this.authed = true;
-                this.onReady();
+                this.onReady(msg);
             }
             else if (this.authed) {
                 this.onMessage(msg);
@@ -270,21 +276,31 @@ export function apply(ctx) {
     const pendingApprovals = new Map();
     const lastState = new Map();
     const asks = new Map();
+    /** Sessions Pointy started: a closed card archives those, never the user's own. */
+    const started = new Set();
+    /** Sessions a closed card asked to archive while their turn still ran. */
+    const archiving = new Set();
+    /** Sessions a closed card handed back to be archived. The session list
+     * leaves them out from the request on, archived or not yet, as DSH's own
+     * list can still show one for a moment after the archive. */
+    const leaving = new Set();
+    const archiveTimers = new Set();
     let lastLineAt = 0;
     let lineBusy = false;
     const link = new PetLink(logger, handlePetMessage);
-    link.onReady = () => {
-        link.send({ type: 'ready', plugin: PLUGIN_VERSION });
+    let launchTried = false;
+    let launchedPet = false;
+    link.onReady = (peer) => {
+        link.send(readyMessage(PLUGIN_VERSION, peer, launchedPet, process.pid));
         link.send(uiInfo());
         for (const msg of lastState.values())
             link.send(msg);
     };
-    let launchTried = false;
     link.onUnreachable = () => {
         if (launchTried)
             return;
         launchTried = true;
-        launchPet(logger);
+        launchedPet = launchPet(logger);
     };
     link.onLost = () => {
         for (const answer of pendingApprovals.values())
@@ -365,12 +381,21 @@ export function apply(ctx) {
                     push(sid, 'idle', { detail: kind });
                 if (asks.has(sid))
                     link.send({ type: 'ask-done', askId: asks.get(sid), sessionId: sid, title: titles.get(sid), reason: kind });
+                // A card that closed while this turn ran leaves its session here. The
+                // turn/end event lands while the agent still reads as running, so the
+                // archive usually has to wait for the idle that follows.
+                if (archiving.delete(sid))
+                    void archiveSession(sid);
                 break;
             }
         }
     });
     ctx.on('agent/status', ({ agent, status }) => {
         link.send({ type: 'status', sessionId: agent.id, running: status === 'running' });
+        // A session whose archive waited for its work: the registry only stops
+        // calling it active once its agent settles.
+        if (status === 'idle' && archiving.delete(agent.id))
+            void archiveSession(agent.id);
     }, { global: true });
     ctx.on('agent/error', ({ agent, error }) => {
         const detail = String(error?.message ?? error).slice(0, 2000);
@@ -482,8 +507,18 @@ export function apply(ctx) {
             searchSessions(String(msg.query ?? '')).then(items => link.send({ type: 'sessions', reqId: msg.reqId, items }), error => link.send({ type: 'sessions', reqId: msg.reqId, items: [], error: String(error?.message ?? error) }));
         }
         else if (msg.type === 'focus') {
-            if (typeof msg.sessionId === 'string')
+            if (typeof msg.sessionId === 'string') {
+                // Opening the session in DSH hands it to the user: a card closing
+                // later must not archive it, and a pending archive is off.
+                started.delete(msg.sessionId);
+                archiving.delete(msg.sessionId);
+                leaving.delete(msg.sessionId);
                 requestFocus(msg.sessionId);
+            }
+        }
+        else if (msg.type === 'archive') {
+            if (typeof msg.sessionId === 'string')
+                void archiveSession(msg.sessionId);
         }
         else if (msg.type === 'suggest-request') {
             suggest(msg).then(suggestions => link.send({ type: 'suggestions', reqId: msg.reqId, suggestions }), error => link.send({ type: 'suggestions', reqId: msg.reqId, suggestions: [], error: String(error?.message ?? error) }));
@@ -494,12 +529,12 @@ export function apply(ctx) {
     }
     async function listSessions() {
         const controller = ctx.get('sessionController');
-        const seen = new Map([...titles].map(([id, title]) => [id, { sessionId: id, title }]));
+        const seen = new Map([...titles].filter(([id]) => !leaving.has(id)).map(([id, title]) => [id, { sessionId: id, title }]));
         const workspaceOf = new Map(workspaceList().flatMap(w => w.sessionIds.map((id) => [id, w.title])));
         if (controller) {
             const { items } = await controller.list({}, AbortSignal.timeout(5000));
             for (const item of items) {
-                if (item.archived || item.blank)
+                if (item.archived || item.blank || leaving.has(item.sessionId))
                     continue;
                 const named = item.projections?.values?.title ?? item.title ?? titles.get(item.sessionId);
                 const title = isOurPreamble(named) ? undefined : named;
@@ -621,6 +656,59 @@ export function apply(ctx) {
             }
         }
     }
+    // forgetSession drops a session Pointy archived: it must not come back
+    // through the title or state caches, which outlive the session list.
+    function forgetSession(sessionId) {
+        started.delete(sessionId);
+        archiving.delete(sessionId);
+        titles.delete(sessionId);
+        lastState.delete(sessionId);
+        if (activeRoot === sessionId)
+            activeRoot = undefined;
+    }
+    // A closed card hands back the session it asked in. Only the ones Pointy
+    // started are archived: a session the user picked is theirs to keep.
+    async function archiveSession(sessionId, attempt = 0) {
+        if (!sessionId || !started.has(sessionId))
+            return;
+        const registry = ctx.get('workspaceRegistry');
+        if (!registry?.archiveSession) {
+            logger.warn('pointy: this DSH cannot archive a session from a plugin');
+            return;
+        }
+        leaving.add(sessionId);
+        if (registry.archivedSessionIds?.includes(sessionId))
+            return forgetSession(sessionId);
+        try {
+            await registry.archiveSession(sessionId);
+            forgetSession(sessionId);
+            logger.info(`pointy: archived the session a closed card asked in (${sessionId})`);
+            // Lets Pointy explain the session that just left DSH's list, once.
+            link.send({ type: 'archived', sessionId });
+        }
+        catch (error) {
+            if (error?.name === 'WorkspaceActiveSessionError') {
+                // Still working: the turn/end that woke us lands before the agent
+                // reads idle, and a pill can go away mid-answer. Retry on a timer
+                // and again when the agent settles.
+                archiving.add(sessionId);
+                if (attempt < ARCHIVE_TRIES) {
+                    const timer = setTimeout(() => {
+                        archiveTimers.delete(timer);
+                        void archiveSession(sessionId, attempt + 1);
+                    }, ARCHIVE_RETRY_MS);
+                    archiveTimers.add(timer);
+                }
+                else {
+                    logger.warn(`pointy: session ${sessionId} was still working; archiving it once the agent is idle`);
+                }
+                return;
+            }
+            // It stays in DSH, so cards may offer it again.
+            leaving.delete(sessionId);
+            logger.warn(`pointy: could not archive the session a closed card asked in: ${error?.message ?? error}`);
+        }
+    }
     async function ask(msg) {
         const { askId, target, model, images, workspaceId } = msg;
         const text = composeAsk(msg);
@@ -634,6 +722,9 @@ export function apply(ctx) {
             const chosen = ctx.get('workspaceRegistry')?.list().find(w => w.id === workspaceId);
             const workspace = chosen ?? defaultWorkspace();
             sessionId = (await controller.create(workspace ? { workspaceId: workspace.id } : {})).sessionId;
+            started.add(sessionId);
+            if (started.size > 200)
+                started.delete(started.values().next().value);
         }
         let agent = ctx.agents.get(sessionId);
         if (agent === undefined && controller?.agents?.resolveAgent) {
@@ -668,6 +759,7 @@ export function apply(ctx) {
         }
         const content = await promptContent(text, Array.isArray(images) ? images : []);
         asks.set(sessionId, askId);
+        archiving.delete(sessionId);
         if (asks.size > 20)
             asks.delete(asks.keys().next().value);
         agent.followup(createUserMessage({ content, source: { kind: 'user' } }));
@@ -735,7 +827,12 @@ export function apply(ctx) {
     }
     ctx.effect(() => {
         link.start();
-        return () => link.stop();
+        return () => {
+            link.stop();
+            for (const timer of archiveTimers)
+                clearTimeout(timer);
+            archiveTimers.clear();
+        };
     }, 'pointy: pet link');
     const focusWaiters = new Set();
     let pendingFocus;
