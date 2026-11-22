@@ -105,7 +105,7 @@ const (
 	carbonShift           = 1 << 9
 	carbonOption          = 1 << 11
 	carbonControl         = 1 << 12
-	kEventHotKeyExclusive = 1 << 1
+	kEventHotKeyExclusive = 1 << 0
 	holdHotKeySignature   = 0x5650484B // 'VPHK'
 )
 
@@ -292,7 +292,8 @@ func hold(combo, readyFile string, seconds float64) {
 			fail("unknown modifier " + m)
 		}
 	}
-	class("NSApplication").Send(sel("sharedApplication"))
+	app := class("NSApplication").Send(sel("sharedApplication"))
+	app.Send(sel("setActivationPolicy:"), 2) // NSApplicationActivationPolicyProhibited
 	var ref uintptr
 	id := eventHotKeyID{Signature: holdHotKeySignature, ID: 1}
 	if st := registerEventHotKey(uint32(code), mods, id, getAppEventTarget(), kEventHotKeyExclusive, &ref); st != 0 {

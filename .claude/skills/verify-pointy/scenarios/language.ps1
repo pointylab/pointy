@@ -52,7 +52,7 @@ try {
   Start-Sleep -Milliseconds 400
   $nw = Win-Of 'notice.html'
   Shot-Page 'notice.html' 'en-notice'
-  $noticeText = Js $nw 'return document.getElementById("box").innerText'
+  $noticeText = (Js $nw 'return document.getElementById("box").innerText') -join "`n"
   Log "English notice text: $($noticeText -replace '\r?\n', ' | ')"
   Expect 'the notice shows English welcome text' {
     $noticeText.Contains($en.welcome.title) -and $noticeText.Contains('Shake the mouse')

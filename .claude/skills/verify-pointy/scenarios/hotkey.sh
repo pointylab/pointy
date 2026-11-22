@@ -92,6 +92,7 @@ until_true 5 no_overlay
 holder=$!
 print $holder > "$VP_RUN/pids/holder"
 expect "another process holds Cmd+Shift+Space" until_true 10 grep -q held "$VP_RUN/holder.out"
+grep -q held "$VP_RUN/holder.out" 2>/dev/null || log "holder.log: $(cat "$VP_RUN/holder.log" 2>/dev/null)"
 step tray.sh custom-taken "$HOTKEY" "$CUSTOM"
 expect "the recorder opens again" until_true 5 has notice.html
 sleep 0.5

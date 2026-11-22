@@ -46,7 +46,9 @@ icon=$(drive extras $p | python3 -c 'import json,sys; ws=json.load(sys.stdin) or
 log "tray icon tooltip ($name): $(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["Name"])' "$icon")"
 read ix iy <<< "$(python3 -c 'import json,sys; w=json.loads(sys.argv[1]); print(round(w["X"]+w["W"]/2), round(w["Y"]+w["H"]/2))' "$icon")"
 icon_is_mine() { drive extras $p | python3 -c 'import json,sys; x,y=float(sys.argv[1]),float(sys.argv[2]); sys.exit(0 if any(w["X"]<=x<w["X"]+w["W"] and w["Y"]<=y<w["Y"]+w["H"] for w in json.load(sys.stdin) or []) else 1)' $ix $iy || die "the menu bar icon at $ix,$iy is no longer Pointy's"; }
-close_menu() { icon_is_mine; drive click $ix $iy; }
+no_menu() { [ "$($BIN/drive windows $p | grep -o '"Layer":101' | wc -l)" -eq 0 ]; }
+wait_menu_closed() { wait_until 5 "the tray menu to close" no_menu; sleep 0.2; }
+close_menu() { icon_is_mine; drive click $ix $iy; wait_menu_closed; }
 
 guard
 icon_is_mine
@@ -59,7 +61,7 @@ if (( $# == 0 )); then shot $(bounds) $name-tray; close_menu; exit 0; fi
 read mx my <<< "$(center "$1")"
 [ -n "${my:-}" ] || { shot $(bounds) $name-tray; close_menu; die "the tray menu has no item \"$1\""; }
 mine $mx $my $p
-if ! has_submenu "$1"; then shot $(bounds) $name-tray; drive click $mx $my; log "chose $1"; exit 0; fi
+if ! has_submenu "$1"; then shot $(bounds) $name-tray; drive click $mx $my; wait_menu_closed; log "chose $1"; exit 0; fi
 drive move $mx $my
 wait_until 5 "the submenu" sh -c "[ \$($BIN/drive windows $p | grep -o '\"Layer\":101' | wc -l) -ge 2 ]"
 sleep 0.3
@@ -74,4 +76,5 @@ mine $sx $my $p
 drive move $sx $my
 mine $sx $sy $p
 drive click $sx $sy
+wait_menu_closed
 log "chose $1 > $2"
