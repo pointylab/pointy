@@ -103,6 +103,13 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - uses: actions/checkout@v5
+        with:
+          path: src
+          persist-credentials: false
       - uses: actions/download-artifact@v5
         with:
           name: pointylab-dsh
@@ -141,4 +148,10 @@ jobs:
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" "${{ steps.pkg.outputs.tgz }}" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+        run: |
+          node src/tools/release-notes.ts src/CHANGELOG.md "$GITHUB_REF_NAME" > notes.md
+          if [ -s notes.md ]; then
+            gh release create "$GITHUB_REF_NAME" "${{ steps.pkg.outputs.tgz }}" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" "${{ steps.pkg.outputs.tgz }}" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+          fi
