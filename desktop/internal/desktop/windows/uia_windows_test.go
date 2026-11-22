@@ -39,7 +39,8 @@ func openNotepad(t *testing.T, text string) windows.HWND {
 	}
 	title, _ := windows.UTF16PtrFromString(name + " - Notepad")
 	var h uintptr
-	for deadline := time.Now().Add(10 * time.Second); h == 0 && time.Now().Before(deadline); time.Sleep(200 * time.Millisecond) {
+	// The first Notepad on a fresh CI runner has taken longer than 10s (#46).
+	for deadline := time.Now().Add(30 * time.Second); h == 0 && time.Now().Before(deadline); time.Sleep(200 * time.Millisecond) {
 		h, _, _ = procFindWindowW.Call(0, uintptr(unsafe.Pointer(title)))
 	}
 	if h == 0 {

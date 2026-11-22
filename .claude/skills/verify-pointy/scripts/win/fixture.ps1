@@ -6,13 +6,31 @@
 . (Join-Path $PSScriptRoot 'env.ps1')
 $old = Get-RunPid fixture
 if ($old -and (Get-Process -Id $old -ErrorAction SilentlyContinue)) { Stop-Process -Id $old -Force }
-$p = Start-Process pwsh -PassThru -WindowStyle Hidden -ArgumentList @(
-  '-NoProfile', '-STA', '-File', (Join-Path $PSScriptRoot 'fixture-window.ps1'), '-Text', (Join-Path $Skill 'fixture.txt'))
-Set-Content -LiteralPath (Join-Path $VP_RUN 'pids\fixture') -Value $p.Id
-$h = $null
-Wait-Until 20 'the fixture window' {
-  $script:h = Drive windows $p.Id | ConvertFrom-Json | Where-Object Title -eq 'verify-pointy fixture' | Select-Object -First 1
-  [bool]$script:h
+# Start-Fixture starts the window's pwsh and returns its window, or $null if
+# none shows within $secs.
+function Start-Fixture([double]$secs) {
+  $script:p = Start-Process pwsh -PassThru -WindowStyle Hidden -ArgumentList @(
+    '-NoProfile', '-STA', '-File', (Join-Path $PSScriptRoot 'fixture-window.ps1'), '-Text', (Join-Path $Skill 'fixture.txt'))
+  Set-Content -LiteralPath (Join-Path $VP_RUN 'pids\fixture') -Value $p.Id
+  $end = (Get-Date).AddSeconds($secs)
+  while ((Get-Date) -lt $end) {
+    try {
+      $w = Drive windows $p.Id | ConvertFrom-Json | Where-Object Title -eq 'verify-pointy fixture' | Select-Object -First 1
+      if ($w) { return $w }
+    } catch {}
+    Start-Sleep -Milliseconds 200
+  }
+  $null
+}
+$h = Start-Fixture 20
+if (-not $h) {
+  # A fresh CI runner once left the window unshown for 20 s while its pwsh
+  # still ran (#46); another start comes before failing the run.
+  $state = if ($p.HasExited) { "exited with $($p.ExitCode)" } else { "running, windows $(Drive windows $p.Id -all)" }
+  Log "(no fixture window after 20s; pwsh $($p.Id) $state; starting another)"
+  Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+  $h = Start-Fixture 30
+  if (-not $h) { Die 'timed out waiting for the fixture window, twice' }
 }
 Guard
 if ((Drive focus $h.HWND) -ne 'true') { Die 'the fixture window would not come to the front' }

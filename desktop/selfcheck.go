@@ -149,8 +149,8 @@ func within[T any](deadline time.Duration, call func(context.Context) (T, error)
 const (
 	// pageReadyWait is how long a test window's first page may take. The
 	// first web view of a run starts WebView2, which on a fresh CI runner
-	// has taken longer than 5s.
-	pageReadyWait = 30 * time.Second
+	// usually takes 2-10s but has taken longer than 30s (#46).
+	pageReadyWait = 60 * time.Second
 	// paintWait is how long a shown window may take to reach the screen.
 	paintWait = 5 * time.Second
 )
