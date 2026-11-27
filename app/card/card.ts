@@ -277,6 +277,7 @@ function opt(value: string, name: string, meta: string, running?: boolean, sub?:
 
 let menuList!: HTMLElement
 let menuSearch!: HTMLInputElement
+let menuOpensUp: boolean | undefined
 let searchSeq = 0
 let searchTimer: number | undefined
 
@@ -327,6 +328,7 @@ function onSearch() {
 function openMenu() {
   if ($('target').disabled) return
   closeModelMenu()
+  menuOpensUp = undefined
   menuSearch = Object.assign(document.createElement('input'), { className: 'menu-search', placeholder: '搜索会话标题', spellcheck: false })
   menuSearch.addEventListener('input', onSearch)
   menuSearch.addEventListener('keydown', (e) => {
@@ -369,25 +371,38 @@ function openMenu() {
   parts.push(Object.assign(document.createElement('div'), { className: 'menu-hint', textContent: 'Tab 切换当前对话 / 新任务' }))
   menu.replaceChildren(...parts)
   menu.hidden = false
+  menu.scrollTop = 0
   fillList(recentRows(), false)
   menuSearch.focus()
 }
 function fitMenu() {
+  if (menu.hidden) return
   const r = $('target').getBoundingClientRect()
   menu.style.left = `${r.left - 6}px`
+  const scrollTop = menu.scrollTop
+  menu.style.maxHeight = ''
   const h = menu.getBoundingClientRect().height
-  if (r.top - h - 4 >= 0) { menu.style.top = `${r.top - h - 4}px`; return }
-  menu.style.top = `${r.bottom + 4}px`
-  const need = Math.ceil(menu.getBoundingClientRect().bottom + 12)
-  if (need <= window.innerHeight) return
+  const above = Math.max(0, r.top - 4)
+  const below = Math.max(0, window.innerHeight - r.bottom - 4)
+  if (menuOpensUp === undefined) menuOpensUp = h <= above
+  const room = menuOpensUp ? above : below
+  if (h > room) {
+    // max-height applies to the content box. Leave space for padding and borders.
+    const frame = h - parseFloat(getComputedStyle(menu).height)
+    menu.style.maxHeight = `${Math.max(0, room - frame)}px`
+  }
+  menu.style.top = `${menuOpensUp ? Math.max(0, above - menu.getBoundingClientRect().height) : r.bottom + 4}px`
+  menu.scrollTop = scrollTop
+  if (menuOpensUp || h <= room) return
   const card = $('card')
   if (!card.style.height) {
     card.style.height = `${card.getBoundingClientRect().height}px`
     card.style.boxSizing = 'border-box'
     card.style.bottom = 'auto'
   }
-  window.card.menuRoom(need)
+  window.card.menuRoom(Math.ceil(r.bottom + 4 + h + 12))
 }
+window.addEventListener('resize', fitMenu)
 function closeMenu() {
   if (menu.hidden) return
   menu.hidden = true

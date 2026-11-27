@@ -142,6 +142,7 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 #target:disabled svg { display: none; }
 
 #target-menu {
+  overflow-y: auto;
   position: fixed; z-index: 10;
   width: 300px; padding: 6px;
   border-radius: 12px;
