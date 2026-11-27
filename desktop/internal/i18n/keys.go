@@ -34,6 +34,7 @@ var (
 	HintElevated    = key("hint.elevated")
 	HintNoHook      = key("hint.noHook")
 	HintWebSession  = key("hint.webSession")
+	HintNoFrontend  = key("hint.noFrontend")
 	HintArchivedMac = key("hint.archivedMac")
 	HintArchivedWin = key("hint.archivedWin")
 

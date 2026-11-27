@@ -348,11 +348,19 @@ export function apply(ctx: DshContext) {
   }
 
   let webOrigin: string | undefined
-  const uiInfo = () => ({ type: 'ui', kind: DESKTOP ? 'desktop' : 'web', origin: DESKTOP ? undefined : webOrigin })
-  function noteOrigin(origin: unknown) {
-    if (DESKTOP || typeof origin !== 'string' || !/^https?:\/\/[^/]+$/.test(origin) || origin === webOrigin) return
+  let webPollExpiry: ReturnType<typeof setTimeout> | undefined
+  const uiInfo = () => ({ type: 'ui', kind: DESKTOP ? 'desktop' : webOrigin ? 'web' : 'none', origin: webOrigin })
+  function setWebOrigin(origin: string | undefined) {
+    if (origin === webOrigin) return
     webOrigin = origin
     link.send(uiInfo())
+  }
+  function noteWebPoll(origin: unknown) {
+    if (DESKTOP || typeof origin !== 'string' || !/^https?:\/\/[^/]+$/.test(origin)) return
+    setWebOrigin(origin)
+    // Leave time after a long poll for the browser to start its next one.
+    clearTimeout(webPollExpiry)
+    webPollExpiry = setTimeout(() => setWebOrigin(undefined), FOCUS_POLL_MS + 5_000)
   }
 
   function push(sessionId: string, state: string, extra: object = {}) {
@@ -535,7 +543,7 @@ export function apply(ctx: DshContext) {
         started.delete(msg.sessionId)
         archiving.delete(msg.sessionId)
         leaving.delete(msg.sessionId)
-        requestFocus(msg.sessionId)
+        if (DESKTOP || webOrigin) requestFocus(msg.sessionId)
       }
     } else if (msg.type === 'archive') {
       if (typeof msg.sessionId === 'string') void archiveSession(msg.sessionId)
@@ -867,12 +875,15 @@ export function apply(ctx: DshContext) {
   ctx.inject(['connection'], (connectionCtx) => {
     const dispose = connectionCtx.connection.rpc.handle(RPC_CHANNEL, async (endpoint: string, params: any) => {
       if (endpoint === 'next-focus') {
-        noteOrigin(params?.origin)
+        noteWebPoll(params?.origin)
         return { ok: true, value: await nextFocus() }
       }
       return { ok: false, error: { code: 'unknown-endpoint', message: `unknown endpoint ${endpoint}` } }
     })
     return async () => {
+      clearTimeout(webPollExpiry)
+      setWebOrigin(undefined)
+      pendingFocus = undefined
       for (const resolve of focusWaiters) resolve(null)
       await dispose()
     }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/pointylab/pointy/desktop/internal/i18n"
 	"github.com/pointylab/pointy/desktop/internal/server"
 )
 
@@ -186,6 +187,37 @@ func TestOpenInWebUI(t *testing.T) {
 	a.Open("")
 	if o := <-focused; o != "http://127.0.0.1:3093" {
 		t.Fatalf("focused %q", o)
+	}
+}
+
+func TestContinueAfterWebUICloses(t *testing.T) {
+	var hint string
+	tabAttempts := 0
+	a := New(Deps{
+		FocusTab: func(string) bool { tabAttempts++; return false },
+		OpenURL:  func(string) { t.Error("opened the desktop app") },
+		ShowHint: func(text string) { hint = text },
+	}, HostOptions{})
+	p := serve(t, a).connect(t)
+	for _, tc := range []struct {
+		kind string
+		want string
+	}{
+		{"web", i18n.T(i18n.HintWebSession, "agent", Name)},
+		{"none", i18n.T(i18n.HintNoFrontend)},
+	} {
+		p.send(map[string]string{"type": "ui", "kind": tc.kind})
+		// Messages on this connection are processed in order.
+		p.send(map[string]string{"type": "ready", "plugin": tc.kind})
+		waitFor(t, tc.kind, func() bool { return a.Status().Version == tc.kind })
+		hint = ""
+		a.Open("s1")
+		if hint != tc.want || tabAttempts != 1 {
+			t.Fatalf("%s: hint %q, browser focus attempts %d", tc.kind, hint, tabAttempts)
+		}
+		if m := p.read(); m["type"] != "focus" || m["sessionId"] != "s1" {
+			t.Fatalf("%s: missing session handoff: %v", tc.kind, m)
+		}
 	}
 }
 

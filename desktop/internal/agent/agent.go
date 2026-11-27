@@ -46,7 +46,7 @@ type Deps struct {
 }
 
 type ui struct {
-	web    bool
+	kind   string
 	origin string
 }
 
@@ -90,6 +90,7 @@ func (a *DSH) Attach(c *server.Conn) server.Handler {
 	a.mu.Lock()
 	old := a.plugin
 	a.plugin = c
+	a.ui = ui{}
 	a.everConnected = true
 	a.mu.Unlock()
 	if old != nil && old != c {
@@ -115,6 +116,7 @@ func (h pluginHandler) OnClosed() {
 		return
 	}
 	a.plugin = nil
+	a.ui = ui{}
 	a.version = ""
 	ever := a.everConnected
 	a.mu.Unlock()
@@ -151,17 +153,14 @@ func (a *DSH) onPluginMessage(m server.Message) {
 		a.changed()
 	case "ui":
 		origin, _ := msg.Origin.(string)
-		u := ui{web: msg.Kind == "web", origin: origin}
+		kind, _ := msg.Kind.(string)
 		a.mu.Lock()
-		a.ui = u
+		a.ui = ui{kind: kind, origin: origin}
 		a.mu.Unlock()
 		logged := struct {
 			Kind   string `json:"kind"`
 			Origin string `json:"origin,omitempty"`
-		}{"desktop", origin}
-		if u.web {
-			logged.Kind = "web"
-		}
+		}{kind, origin}
 		a.log("dsh-ui", string(mustJSON(logged)))
 	case "approval":
 		a.mu.Lock()
@@ -227,14 +226,21 @@ func (a *DSH) Open(sessionID string) {
 	a.mu.Lock()
 	u := a.ui
 	a.mu.Unlock()
-	if u.web {
+	switch u.kind {
+	case "none":
+		if a.deps.ShowHint != nil {
+			a.deps.ShowHint(i18n.T(i18n.HintNoFrontend))
+		}
+	case "web":
 		if a.deps.FocusTab == nil || !a.deps.FocusTab(u.origin) {
 			if a.deps.ShowHint != nil {
 				a.deps.ShowHint(i18n.T(i18n.HintWebSession, "agent", Name))
 			}
 		}
-	} else if a.deps.OpenURL != nil {
-		a.deps.OpenURL("dsh://open")
+	default:
+		if a.deps.OpenURL != nil {
+			a.deps.OpenURL("dsh://open")
+		}
 	}
 	if sessionID != "" {
 		a.send(mustJSON(map[string]string{"type": "focus", "sessionId": sessionID}))

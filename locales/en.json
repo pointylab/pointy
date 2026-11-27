@@ -63,6 +63,7 @@
     "elevated": "This app runs as administrator, so Pointy can't read it",
     "noHook": "Pointy couldn't hold this click, so it can't point. Allow Pointy under Accessibility first",
     "webSession": "Switched {agent} in your browser to this session",
+    "noFrontend": "This interface can't switch to DSH automatically. Go to DSH manually.",
     "archivedMac": "Session archived — restore it in DSH; turn this off in the menu bar",
     "archivedWin": "Session archived — restore it in DSH; turn this off in the system tray",
     "blockedPassword": "Pointy doesn't read password fields",
